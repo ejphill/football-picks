@@ -1,0 +1,29 @@
+# Docs
+FootballPicksArchitecture.md
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Compiled binaries
+/server
+/bin/
+tmp/
+
+# Test artifacts
+coverage.out
+*.test
+
+# Generated seed output (one-time backfill tooling)
+scripts/
+
+# Frontend build output
+frontend/dist/
+frontend/node_modules/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
