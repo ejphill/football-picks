@@ -14,8 +14,8 @@ export default function GameCard({ game, selected, locked: isLocked, onSelect }:
       ? game.spread === 0
         ? 'PK'
         : game.spread > 0
-          ? `+${game.spread}`
-          : `${game.spread}`
+          ? `${game.away_team} -${game.spread}`
+          : `${game.home_team} -${Math.abs(game.spread)}`
       : 'N/A'
 
   const teamButton = (side: 'home' | 'away') => {
