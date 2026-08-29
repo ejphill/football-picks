@@ -18,16 +18,35 @@ import (
 
 var boldRe = regexp.MustCompile(`\*\*(.*?)\*\*`)
 
+// dayColors are darker shades so day headers stay readable on the email's
+// light background (matches internal/draft's Tuesday-Monday week order).
+var dayColors = map[string]string{
+	"Tuesday":   "#0f766e",
+	"Wednesday": "#6d28d9",
+	"Thursday":  "#c2410c",
+	"Friday":    "#b45309",
+	"Saturday":  "#1d4ed8",
+	"Sunday":    "#15803d",
+	"Monday":    "#b91c1c",
+}
+
+var dayHeaderRe = regexp.MustCompile(`(?m)^(Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|Monday):`)
+
 // introPlain strips **bold** markers for plain-text email.
 func introPlain(s string) string {
 	return boldRe.ReplaceAllString(s, "$1")
 }
 
-// introHTML escapes HTML, converts **bold** → <strong>, and newlines → <br>.
+// introHTML escapes HTML, converts **bold** → <strong>, colors day headers
+// (as emitted by internal/draft's buildGames), and newlines → <br>.
 func introHTML(s string) string {
 	escaped := html.EscapeString(s)
 	withBold := boldRe.ReplaceAllString(escaped, "<strong>$1</strong>")
-	return strings.ReplaceAll(withBold, "\n", "<br>")
+	withDayColors := dayHeaderRe.ReplaceAllStringFunc(withBold, func(match string) string {
+		day := strings.TrimSuffix(match, ":")
+		return fmt.Sprintf(`<strong style="color:%s;">%s:</strong>`, dayColors[day], day)
+	})
+	return strings.ReplaceAll(withDayColors, "\n", "<br>")
 }
 
 type Mailer interface {

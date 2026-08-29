@@ -18,7 +18,7 @@ var ordinals = []string{
 	"sixth", "seventh", "eighth", "ninth", "tenth",
 }
 
-var dayOrder = []string{"Thursday", "Friday", "Saturday", "Sunday", "Monday", "Tuesday", "Wednesday"}
+var dayOrder = []string{"Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday", "Monday"}
 
 // DraftSections holds the six editable sections of an announcement.
 type DraftSections struct {
