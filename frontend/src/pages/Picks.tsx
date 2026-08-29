@@ -3,6 +3,16 @@ import { getActiveWeek, getGames } from '../api/client'
 import { usePicksStore } from '../stores/picksStore'
 import GameCard from '../components/GameCard'
 import type { Game, Week } from '../types'
+import { groupByDay } from '../utils/groupByDay'
+
+function sectionLabel(day: string, games: Game[]): string {
+  const date = new Date(games[0].kickoff_at).toLocaleDateString('en-US', {
+    month: 'long',
+    day: 'numeric',
+    timeZone: 'America/New_York',
+  })
+  return `${day}, ${date}`
+}
 
 export default function Picks() {
   const { picksByGameId, loadPicks, submitPick, submitError } = usePicksStore()
@@ -125,15 +135,24 @@ export default function Picks() {
         </div>
       )}
 
-      <div className="space-y-3">
-        {games.map((game) => (
-          <GameCard
-            key={game.id}
-            game={game}
-            selected={draft[game.id] ?? null}
-            locked={Date.now() > new Date(game.kickoff_at).getTime()}
-            onSelect={handleSelect}
-          />
+      <div className="space-y-5">
+        {groupByDay(games).map(([day, dayGames]) => (
+          <div key={day}>
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
+              {sectionLabel(day, dayGames)}
+            </p>
+            <div className="space-y-3">
+              {dayGames.map((game) => (
+                <GameCard
+                  key={game.id}
+                  game={game}
+                  selected={draft[game.id] ?? null}
+                  locked={Date.now() > new Date(game.kickoff_at).getTime()}
+                  onSelect={handleSelect}
+                />
+              ))}
+            </div>
+          </div>
         ))}
       </div>
 

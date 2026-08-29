@@ -9,6 +9,13 @@ interface GameCardProps {
 
 export default function GameCard({ game, selected, locked: isLocked, onSelect }: GameCardProps) {
 
+  const kickoffStr = new Date(game.kickoff_at).toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZoneName: 'short',
+    timeZone: 'America/New_York',
+  })
+
   const spreadStr =
     game.spread != null
       ? game.spread === 0
@@ -49,7 +56,7 @@ export default function GameCard({ game, selected, locked: isLocked, onSelect }:
     <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 space-y-3">
       <div className="flex justify-between items-center">
         <span className="text-xs text-gray-400">
-          Spread: <span className="font-medium text-gray-600">{spreadStr}</span>
+          {kickoffStr} · Spread: <span className="font-medium text-gray-600">{spreadStr}</span>
         </span>
         {isLocked && (
           <span className="text-xs font-medium text-gray-400">Locked</span>
