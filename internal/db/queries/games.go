@@ -86,7 +86,7 @@ func GetGameByID(ctx context.Context, pool *pgxpool.Pool, id uuid.UUID) (*models
 }
 
 // UpsertGame inserts or updates a game row keyed on espn_game_id.
-// On insert, included_in_picks defaults to FALSE for Thursday/Friday games (DOW 4/5), TRUE otherwise.
+// On insert, included_in_picks defaults to FALSE for Tue/Wed/Thu/Fri games (DOW 2/3/4/5), TRUE otherwise.
 // On update, included_in_picks is left alone to preserve admin overrides.
 func UpsertGame(ctx context.Context, pool *pgxpool.Pool, g *models.Game) (*models.Game, error) {
 	result := &models.Game{}
@@ -94,7 +94,7 @@ func UpsertGame(ctx context.Context, pool *pgxpool.Pool, g *models.Game) (*model
 		INSERT INTO games (week_id, espn_game_id, home_team, away_team, home_team_name, away_team_name,
 		                   spread, kickoff_at, home_score, away_score, winner, status, included_in_picks)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
-		        EXTRACT(DOW FROM $8 AT TIME ZONE 'America/New_York') NOT IN (4, 5))
+		        EXTRACT(DOW FROM $8 AT TIME ZONE 'America/New_York') NOT IN (2, 3, 4, 5))
 		ON CONFLICT (espn_game_id) DO UPDATE SET
 		    home_team      = EXCLUDED.home_team,
 		    away_team      = EXCLUDED.away_team,
