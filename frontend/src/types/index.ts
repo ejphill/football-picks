@@ -36,6 +36,8 @@ export interface Game {
   home_score: number | null
   away_score: number | null
   winner: 'home' | 'away' | 'tie' | null
+  period: number | null
+  display_clock: string | null
   status: 'scheduled' | 'in_progress' | 'final'
   included_in_picks: boolean
 }

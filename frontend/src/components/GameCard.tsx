@@ -25,10 +25,28 @@ export default function GameCard({ game, selected, locked: isLocked, onSelect }:
           : `${game.home_team} -${Math.abs(game.spread)}`
       : 'N/A'
 
+  const periodLabel = (period: number) =>
+    period <= 4 ? `Q${period}` : period === 5 ? 'OT' : `${period - 4}OT`
+
+  const statusBadge =
+    game.status === 'in_progress' ? (
+      <span className="inline-flex items-center gap-1 text-xs font-semibold text-red-600">
+        <span className="w-1.5 h-1.5 rounded-full bg-red-600 animate-pulse" />
+        {game.period != null ? periodLabel(game.period) : 'Live'}
+        {game.display_clock ? ` ${game.display_clock}` : ''}
+      </span>
+    ) : game.status === 'final' ? (
+      <span className="text-xs font-semibold text-gray-500">Final</span>
+    ) : (
+      <span className="text-xs font-medium text-gray-400">Locked</span>
+    )
+
   const teamButton = (side: 'home' | 'away') => {
     const name = side === 'home' ? game.home_team_name : game.away_team_name
     const abbr = side === 'home' ? game.home_team : game.away_team
+    const score = side === 'home' ? game.home_score : game.away_score
     const isPicked = selected === side
+    const showScore = isLocked && score != null
 
     const base =
       'flex-1 flex flex-col items-center py-3 px-2 rounded-lg border-2 transition-all select-none'
@@ -46,7 +64,10 @@ export default function GameCard({ game, selected, locked: isLocked, onSelect }:
         aria-pressed={isPicked}
         disabled={isLocked}
       >
-        <span className="text-lg font-bold text-gray-800">{abbr}</span>
+        <span className="flex items-center gap-2">
+          <span className="text-lg font-bold text-gray-800">{abbr}</span>
+          {showScore && <span className="text-lg font-bold text-gray-800">{score}</span>}
+        </span>
         <span className="text-xs text-gray-500 mt-0.5 truncate max-w-full">{name}</span>
       </button>
     )
@@ -58,9 +79,7 @@ export default function GameCard({ game, selected, locked: isLocked, onSelect }:
         <span className="text-xs text-gray-400">
           {kickoffStr} · Spread: <span className="font-medium text-gray-600">{spreadStr}</span>
         </span>
-        {isLocked && (
-          <span className="text-xs font-medium text-gray-400">Locked</span>
-        )}
+        {isLocked && statusBadge}
       </div>
       <div className="flex gap-3">
         {teamButton('away')}

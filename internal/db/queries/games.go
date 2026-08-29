@@ -10,7 +10,8 @@ import (
 )
 
 const gameColumns = `id, week_id, espn_game_id, home_team, away_team, home_team_name, away_team_name,
-	       spread, kickoff_at, home_score, away_score, winner, status, included_in_picks, created_at, updated_at`
+	       spread, kickoff_at, home_score, away_score, winner, period, display_clock, status,
+	       included_in_picks, created_at, updated_at`
 
 type rowScanner interface {
 	Scan(...any) error
@@ -20,8 +21,8 @@ func scanGame(row rowScanner, g *models.Game) error {
 	return row.Scan(
 		&g.ID, &g.WeekID, &g.ESPNGameID, &g.HomeTeam, &g.AwayTeam,
 		&g.HomeTeamName, &g.AwayTeamName, &g.Spread, &g.KickoffAt,
-		&g.HomeScore, &g.AwayScore, &g.Winner, &g.Status, &g.IncludedInPicks,
-		&g.CreatedAt, &g.UpdatedAt,
+		&g.HomeScore, &g.AwayScore, &g.Winner, &g.Period, &g.DisplayClock, &g.Status,
+		&g.IncludedInPicks, &g.CreatedAt, &g.UpdatedAt,
 	)
 }
 
@@ -92,8 +93,9 @@ func UpsertGame(ctx context.Context, pool *pgxpool.Pool, g *models.Game) (*model
 	result := &models.Game{}
 	err := scanGame(pool.QueryRow(ctx, `
 		INSERT INTO games (week_id, espn_game_id, home_team, away_team, home_team_name, away_team_name,
-		                   spread, kickoff_at, home_score, away_score, winner, status, included_in_picks)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
+		                   spread, kickoff_at, home_score, away_score, winner, period, display_clock,
+		                   status, included_in_picks)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
 		        EXTRACT(DOW FROM $8 AT TIME ZONE 'America/New_York') NOT IN (2, 3, 4, 5))
 		ON CONFLICT (espn_game_id) DO UPDATE SET
 		    home_team      = EXCLUDED.home_team,
@@ -105,11 +107,13 @@ func UpsertGame(ctx context.Context, pool *pgxpool.Pool, g *models.Game) (*model
 		    home_score     = EXCLUDED.home_score,
 		    away_score     = EXCLUDED.away_score,
 		    winner         = EXCLUDED.winner,
+		    period         = EXCLUDED.period,
+		    display_clock  = EXCLUDED.display_clock,
 		    status         = EXCLUDED.status,
 		    updated_at     = NOW()
 		RETURNING `+gameColumns,
 		g.WeekID, g.ESPNGameID, g.HomeTeam, g.AwayTeam, g.HomeTeamName, g.AwayTeamName,
-		g.Spread, g.KickoffAt, g.HomeScore, g.AwayScore, g.Winner, g.Status,
+		g.Spread, g.KickoffAt, g.HomeScore, g.AwayScore, g.Winner, g.Period, g.DisplayClock, g.Status,
 	), result)
 	if err != nil {
 		return nil, fmt.Errorf("upsert game: %w", err)

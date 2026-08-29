@@ -74,7 +74,9 @@ type Odds struct {
 }
 
 type EventStatus struct {
-	Type StatusType `json:"type"`
+	Type         StatusType `json:"type"`
+	Period       int        `json:"period"`
+	DisplayClock string     `json:"displayClock"`
 }
 
 type StatusType struct {

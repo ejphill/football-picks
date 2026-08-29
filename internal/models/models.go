@@ -46,6 +46,8 @@ type Game struct {
 	HomeScore    *int      `json:"home_score,omitempty"`
 	AwayScore    *int      `json:"away_score,omitempty"`
 	Winner       *string   `json:"winner,omitempty"`
+	Period       *int      `json:"period,omitempty"`
+	DisplayClock *string   `json:"display_clock,omitempty"`
 	Status          string    `json:"status"`
 	IncludedInPicks bool      `json:"included_in_picks"`
 	CreatedAt       time.Time `json:"created_at"`

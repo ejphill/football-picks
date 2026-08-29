@@ -107,6 +107,15 @@ func parseEvent(event Event, weekID int) (*models.Game, error) {
 
 	g.Status = mapStatus(comp.Status.Type.Name)
 
+	if g.Status == "in_progress" && comp.Status.Period > 0 {
+		period := comp.Status.Period
+		g.Period = &period
+		if comp.Status.DisplayClock != "" {
+			clock := comp.Status.DisplayClock
+			g.DisplayClock = &clock
+		}
+	}
+
 	if comp.Status.Type.Completed && g.HomeScore != nil && g.AwayScore != nil {
 		w := determineWinner(*g.HomeScore, *g.AwayScore)
 		g.Winner = &w
