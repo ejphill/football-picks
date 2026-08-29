@@ -111,7 +111,6 @@ export default function Picks() {
   }
 
   // Editing / draft screen
-  const weekLocked = week ? Date.now() > new Date(week.picks_lock_at).getTime() : false
   const pickedCount = Object.keys(draft).length
 
   return (
@@ -132,7 +131,7 @@ export default function Picks() {
             key={game.id}
             game={game}
             selected={draft[game.id] ?? null}
-            locked={weekLocked}
+            locked={Date.now() > new Date(game.kickoff_at).getTime()}
             onSelect={handleSelect}
           />
         ))}

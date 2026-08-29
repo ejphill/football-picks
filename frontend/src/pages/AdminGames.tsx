@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { getActiveWeek, getAdminGames, setGameIncluded, syncGames } from '../api/client'
 import type { Game, Week } from '../types'
 
-const DAY_ORDER = ['Thursday', 'Friday', 'Saturday', 'Sunday', 'Monday', 'Tuesday', 'Wednesday']
+const DAY_ORDER = ['Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday', 'Monday']
 
 function groupByDay(games: Game[]): [string, Game[]][] {
   const dayMap = new Map<string, Game[]>()

@@ -10,6 +10,7 @@ import (
 	"github.com/evan/football-picks/internal/db/queries"
 	"github.com/evan/football-picks/internal/draft"
 	"github.com/evan/football-picks/internal/espn"
+	"github.com/evan/football-picks/internal/models"
 	"github.com/evan/football-picks/internal/notify"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -70,6 +71,23 @@ func (s *Scheduler) syncIfNeeded(ctx context.Context, failures *int) time.Durati
 		return time.Hour
 	}
 
+	all, err := queries.GetAllGamesByWeek(ctx, s.pool, week.ID)
+	if err != nil {
+		return time.Hour
+	}
+
+	// Week hasn't been synced from ESPN yet — pull its schedule so picks and
+	// scoring can proceed without a manual admin sync. Re-checked hourly
+	// until ESPN publishes the week (and to catch spread updates as odds
+	// firm up, since every sync overwrites spread on conflict).
+	if len(all) == 0 {
+		if err := s.syncWeek(ctx, week); err != nil {
+			return s.syncFailed(failures, "poller: initial sync failed", week.WeekNumber, err)
+		}
+		*failures = 0
+		return time.Hour
+	}
+
 	games, err := queries.GetGamesByWeek(ctx, s.pool, week.ID)
 	if err != nil {
 		return time.Hour
@@ -80,24 +98,8 @@ func (s *Scheduler) syncIfNeeded(ctx context.Context, failures *int) time.Durati
 	// Any included game that has kicked off but isn't final yet?
 	for _, g := range games {
 		if now.After(g.KickoffAt) && g.Status != "final" {
-			syncCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-			seasonType := 2
-			if week.WeekNumber > 18 {
-				seasonType = 3 // playoffs
-			}
-			err := s.syncer.SyncWeek(syncCtx, week, seasonType)
-			cancel()
-			if err != nil {
-				*failures++
-				backoff := time.Duration(*failures) * 30 * time.Second
-				if backoff > 5*time.Minute {
-					backoff = 5 * time.Minute
-				}
-				jitter := time.Duration(rand.Int63n(int64(10 * time.Second)))
-				slog.Warn("poller: sync week failed",
-					"week", week.WeekNumber, "consecutive_failures", *failures,
-					"err", err, "retry_in", (backoff+jitter).Round(time.Second).String())
-				return backoff + jitter
+			if err := s.syncWeek(ctx, week); err != nil {
+				return s.syncFailed(failures, "poller: sync week failed", week.WeekNumber, err)
 			}
 			*failures = 0
 			return 60 * time.Second
@@ -114,6 +116,29 @@ func (s *Scheduler) syncIfNeeded(ctx context.Context, failures *int) time.Durati
 	}
 
 	return time.Hour
+}
+
+func (s *Scheduler) syncWeek(ctx context.Context, week *models.Week) error {
+	seasonType := 2
+	if week.WeekNumber > 18 {
+		seasonType = 3 // playoffs
+	}
+	syncCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	return s.syncer.SyncWeek(syncCtx, week, seasonType)
+}
+
+// syncFailed records a failure and returns an exponential backoff (30s×n, cap 5m) with jitter.
+func (s *Scheduler) syncFailed(failures *int, msg string, weekNumber int, err error) time.Duration {
+	*failures++
+	backoff := time.Duration(*failures) * 30 * time.Second
+	if backoff > 5*time.Minute {
+		backoff = 5 * time.Minute
+	}
+	jitter := time.Duration(rand.Int63n(int64(10 * time.Second)))
+	slog.Warn(msg, "week", weekNumber, "consecutive_failures", *failures,
+		"err", err, "retry_in", (backoff+jitter).Round(time.Second).String())
+	return backoff + jitter
 }
 
 // announceLoop fires a default weekly announcement on Saturday at 1 PM EST

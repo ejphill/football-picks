@@ -79,6 +79,12 @@ TEST_DATABASE_URL=postgres://picks:picks@localhost:5433/footballpicks_test \
   go test ./... -p 1
 ```
 
+## Operating the League
+
+See [docs/OPERATIONS.md](docs/OPERATIONS.md) for what runs automatically
+week-to-week versus what the league admin needs to do by hand (syncing
+games, toggling picks, season setup).
+
 ## Future Improvements
 
 - Wire an external cron or Redis distributed lock to support horizontal scaling of the scheduler (needed if scale increases)
