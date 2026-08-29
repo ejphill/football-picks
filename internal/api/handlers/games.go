@@ -3,6 +3,7 @@ package handlers
 import (
 	"errors"
 	"net/http"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/evan/football-picks/internal/db/queries"
@@ -32,6 +33,38 @@ func (h *GamesHandler) ActiveWeek(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	respondJSON(w, http.StatusOK, week)
+}
+
+// GET /api/v1/seasons
+func (h *GamesHandler) Seasons(w http.ResponseWriter, r *http.Request) {
+	seasons, err := queries.ListSeasons(r.Context(), h.pool)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	if seasons == nil {
+		seasons = []models.Season{}
+	}
+	respondJSON(w, http.StatusOK, seasons)
+}
+
+// GET /api/v1/weeks?season=2025
+func (h *GamesHandler) Weeks(w http.ResponseWriter, r *http.Request) {
+	seasonYear, err := strconv.Atoi(r.URL.Query().Get("season"))
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "season is required")
+		return
+	}
+
+	weeks, err := queries.ListWeeksBySeason(r.Context(), h.pool, seasonYear)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	if weeks == nil {
+		weeks = []models.Week{}
+	}
+	respondJSON(w, http.StatusOK, weeks)
 }
 
 // GET /api/v1/games?week=1&season=2025

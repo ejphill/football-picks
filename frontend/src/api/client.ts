@@ -3,6 +3,7 @@ import { supabase } from './supabase'
 import type {
   Game,
   Pick,
+  Season,
   User,
   Week,
   WeeklyLeaderboardResponse,
@@ -34,7 +35,11 @@ export const getMe = () => api.get<User>('/users/me')
 export const updateMe = (patch: { display_name?: string; notify_email?: boolean }) =>
   api.patch<User>('/users/me', patch)
 
-// ---- Weeks ----
+// ---- Seasons / Weeks ----
+
+export const getSeasons = () => api.get<Season[]>('/seasons')
+
+export const getWeeks = (season: number) => api.get<Week[]>(`/weeks?season=${season}`)
 
 export const getActiveWeek = () => api.get<Week>('/weeks/active')
 

@@ -1,33 +1,99 @@
 import { useEffect, useState } from 'react'
 import { useLeaderboardStore } from '../stores/leaderboardStore'
 import { useAuthStore } from '../stores/authStore'
-import { getActiveWeek } from '../api/client'
-import type { WeeklyLeaderboardEntry, WeeklyLeaderboardGame, SeasonLeaderboardEntry } from '../types'
+import { getActiveWeek, getSeasons, getWeeks } from '../api/client'
+import type { WeeklyLeaderboardEntry, WeeklyLeaderboardGame, SeasonLeaderboardEntry, Season, Week } from '../types'
 
 type Tab = 'weekly' | 'season'
 
+const selectCls =
+  'text-sm font-medium border border-gray-300 rounded-lg px-2.5 py-1.5 text-gray-700 bg-white ' +
+  'focus:outline-none focus:ring-2 focus:ring-indigo-500'
+
 export default function Leaderboard() {
   const [tab, setTab] = useState<Tab>('weekly')
-  const [activeWeek, setActiveWeek] = useState<{ week_number: number; season_year: number } | null>(null)
+  const [seasons, setSeasons] = useState<Season[]>([])
+  const [weeks, setWeeks] = useState<Week[]>([])
+  const [selectedSeason, setSelectedSeason] = useState<number | null>(null)
+  const [selectedWeek, setSelectedWeek] = useState<number | null>(null)
   const { weeklyData, seasonData, weeklyLoading, seasonLoading, loadWeekly, loadSeason } =
     useLeaderboardStore()
   const currentUser = useAuthStore((s) => s.user)
 
+  // Seed defaults from the active week, and load the season list for the picker.
   useEffect(() => {
-    getActiveWeek().then((res) => setActiveWeek(res.data)).catch(() => {})
+    getActiveWeek()
+      .then((res) => {
+        setSelectedSeason(res.data.season_year)
+        setSelectedWeek(res.data.week_number)
+      })
+      .catch(() => {})
+    getSeasons()
+      .then((res) => setSeasons(res.data))
+      .catch(() => {})
   }, [])
 
+  // Load this season's weeks whenever the season selection changes.
   useEffect(() => {
-    if (!activeWeek) return
-    if (tab === 'weekly') loadWeekly(activeWeek.week_number, activeWeek.season_year)
-    else loadSeason(activeWeek.season_year)
-  }, [tab, activeWeek])
+    if (selectedSeason == null) return
+    getWeeks(selectedSeason)
+      .then((res) => {
+        setWeeks(res.data)
+        // If the currently selected week doesn't belong to this season, default
+        // to the most recent week in it.
+        if (!res.data.some((w) => w.week_number === selectedWeek) && res.data.length > 0) {
+          setSelectedWeek(res.data[res.data.length - 1].week_number)
+        }
+      })
+      .catch(() => {})
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedSeason])
+
+  useEffect(() => {
+    if (selectedSeason == null) return
+    if (tab === 'weekly') {
+      if (selectedWeek == null) return
+      loadWeekly(selectedWeek, selectedSeason)
+    } else {
+      loadSeason(selectedSeason)
+    }
+  }, [tab, selectedSeason, selectedWeek])
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-6 space-y-4">
-      <h2 className="text-xl font-bold text-gray-900">
-        Leaderboard {activeWeek ? `— Week ${activeWeek.week_number}` : ''}
-      </h2>
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <h2 className="text-xl font-bold text-gray-900">
+          Leaderboard {tab === 'weekly' && selectedWeek ? `— Week ${selectedWeek}` : ''}
+        </h2>
+
+        <div className="flex items-center gap-2">
+          <select
+            className={selectCls}
+            value={selectedSeason ?? ''}
+            onChange={(e) => setSelectedSeason(Number(e.target.value))}
+          >
+            {seasons.map((s) => (
+              <option key={s.year} value={s.year}>
+                {s.year}
+              </option>
+            ))}
+          </select>
+
+          {tab === 'weekly' && (
+            <select
+              className={selectCls}
+              value={selectedWeek ?? ''}
+              onChange={(e) => setSelectedWeek(Number(e.target.value))}
+            >
+              {weeks.map((w) => (
+                <option key={w.week_number} value={w.week_number}>
+                  Week {w.week_number}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+      </div>
 
       <div className="flex bg-gray-100 rounded-lg p-1 gap-1">
         {(['weekly', 'season'] as Tab[]).map((t) => (

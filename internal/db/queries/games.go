@@ -177,6 +177,52 @@ func GetWeekByNumberAndSeason(ctx context.Context, pool *pgxpool.Pool, weekNumbe
 	return w, nil
 }
 
+// ListSeasons returns all seasons, most recent year first.
+func ListSeasons(ctx context.Context, pool *pgxpool.Pool) ([]models.Season, error) {
+	rows, err := pool.Query(ctx, `
+		SELECT id, year, is_active, created_at FROM seasons ORDER BY year DESC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("list seasons: %w", err)
+	}
+	defer rows.Close()
+
+	var seasons []models.Season
+	for rows.Next() {
+		var s models.Season
+		if err := rows.Scan(&s.ID, &s.Year, &s.IsActive, &s.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan season: %w", err)
+		}
+		seasons = append(seasons, s)
+	}
+	return seasons, rows.Err()
+}
+
+// ListWeeksBySeason returns a season's weeks in order, for a week-picker UI.
+func ListWeeksBySeason(ctx context.Context, pool *pgxpool.Pool, seasonYear int) ([]models.Week, error) {
+	rows, err := pool.Query(ctx, `
+		SELECT w.id, w.season_id, s.year, w.week_number, w.picks_lock_at
+		FROM weeks w
+		JOIN seasons s ON w.season_id = s.id
+		WHERE s.year = $1
+		ORDER BY w.week_number ASC
+	`, seasonYear)
+	if err != nil {
+		return nil, fmt.Errorf("list weeks by season: %w", err)
+	}
+	defer rows.Close()
+
+	var weeks []models.Week
+	for rows.Next() {
+		var w models.Week
+		if err := rows.Scan(&w.ID, &w.SeasonID, &w.SeasonYear, &w.WeekNumber, &w.PicksLockAt); err != nil {
+			return nil, fmt.Errorf("scan week: %w", err)
+		}
+		weeks = append(weeks, w)
+	}
+	return weeks, rows.Err()
+}
+
 func GetActiveWeek(ctx context.Context, pool *pgxpool.Pool) (*models.Week, error) {
 	w := &models.Week{}
 	err := pool.QueryRow(ctx, `

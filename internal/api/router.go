@@ -73,7 +73,9 @@ func NewRouter(pool *pgxpool.Pool, jwks keyfunc.Keyfunc, corsOrigin string, lbCa
 		r.Get("/users/me", usersH.GetMe)
 		r.Patch("/users/me", usersH.UpdateMe)
 
-		// Weeks
+		// Seasons / Weeks
+		r.Get("/seasons", gamesH.Seasons)
+		r.Get("/weeks", gamesH.Weeks)
 		r.Get("/weeks/active", gamesH.ActiveWeek)
 
 		// Games
