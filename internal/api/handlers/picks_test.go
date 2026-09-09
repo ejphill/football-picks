@@ -165,6 +165,24 @@ func TestPicksSubmit(t *testing.T) {
 		}
 	})
 
+	t.Run("excluded game reported per-item, not saved", func(t *testing.T) {
+		testutil.ResetDB(t, pool)
+		season := testutil.SeedSeason(t, pool, 2025, true)
+		week := testutil.SeedWeek(t, pool, season.ID, 1, time.Now().Add(time.Hour))
+		user := testutil.SeedUser(t, pool, "uid-sub-8", "SubUser8", "sub8@test.com")
+		game := testutil.SeedGame(t, pool, week.ID, "espn-sub-4", "KC", "DET", "scheduled", nil)
+		pool.Exec(context.Background(), `UPDATE games SET included_in_picks = FALSE WHERE id = $1`, game.ID)
+
+		rr := doPicksSubmit(t, pool, user.SupabaseUID, game.ID.String(), "home")
+		result := decodeSingleResult(t, rr)
+		if result.Error != "this game is not part of picks this week" {
+			t.Errorf("got error %q, want exclusion error", result.Error)
+		}
+		if result.Pick != nil {
+			t.Error("excluded game's pick should not be saved")
+		}
+	})
+
 	t.Run("400 for invalid json body", func(t *testing.T) {
 		testutil.ResetDB(t, pool)
 		user := testutil.SeedUser(t, pool, "uid-sub-6", "SubUser6", "sub6@test.com")

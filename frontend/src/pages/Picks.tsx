@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { getActiveWeek, getGames } from '../api/client'
 import { usePicksStore } from '../stores/picksStore'
 import GameCard from '../components/GameCard'
@@ -24,6 +24,7 @@ export default function Picks() {
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [editing, setEditing] = useState(false)
+  const hydratedRef = useRef(false)
 
   useEffect(() => {
     const load = async () => {
@@ -45,8 +46,16 @@ export default function Picks() {
     load()
   }, [])
 
-  // Once picks are loaded, initialize draft from saved picks
+  // Initialize draft from saved picks exactly once, on first load. After
+  // that, `draft` is owned entirely by user selections/submits — re-running
+  // this on every picksByGameId change (e.g. a partial-failure submit only
+  // merging in the picks that succeeded) would silently erase the selection
+  // for whichever pick just failed to save.
   useEffect(() => {
+    if (hydratedRef.current) return
+    if (gamesLoading) return
+    hydratedRef.current = true
+
     const initial: Record<string, 'home' | 'away'> = {}
     for (const [gameId, pick] of Object.entries(picksByGameId)) {
       initial[gameId] = pick.picked_team as 'home' | 'away'
@@ -56,7 +65,7 @@ export default function Picks() {
     if (Object.keys(picksByGameId).length > 0) {
       setSubmitted(true)
     }
-  }, [picksByGameId])
+  }, [picksByGameId, gamesLoading])
 
   const handleSelect = (gameId: string, team: 'home' | 'away') => {
     setDraft((prev) => ({ ...prev, [gameId]: team }))
@@ -95,19 +104,38 @@ export default function Picks() {
   // Submitted confirmation screen
   if (submitted && !editing) {
     const pickedCount = Object.keys(draft).length
+    const complete = pickedCount === games.length
+    const remaining = games.length - pickedCount
     return (
       <div className="max-w-lg mx-auto px-4 py-6 space-y-6">
         <div className="flex flex-col items-center text-center space-y-6 py-10">
-          <div className="w-20 h-20 rounded-full bg-green-100 flex items-center justify-center">
-            <svg className="w-10 h-10 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-            </svg>
+          <div
+            className={`w-20 h-20 rounded-full flex items-center justify-center ${
+              complete ? 'bg-green-100' : 'bg-amber-100'
+            }`}
+          >
+            {complete ? (
+              <svg className="w-10 h-10 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
+            ) : (
+              <svg className="w-10 h-10 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" />
+              </svg>
+            )}
           </div>
           <div className="space-y-2">
-            <h2 className="text-2xl font-bold text-gray-900">Picks Submitted!</h2>
+            <h2 className="text-2xl font-bold text-gray-900">
+              {complete ? 'Picks Submitted!' : 'Picks Partially Submitted'}
+            </h2>
             <p className="text-gray-500">
               Week {week?.week_number} — {pickedCount} of {games.length} games picked
             </p>
+            {!complete && (
+              <p className="text-sm text-amber-600">
+                {remaining} game{remaining === 1 ? '' : 's'} still {remaining === 1 ? 'needs' : 'need'} a pick.
+              </p>
+            )}
           </div>
           <button
             onClick={() => setEditing(true)}

@@ -106,6 +106,8 @@ func (h *PicksHandler) Submit(w http.ResponseWriter, r *http.Request) {
 				results[i].Error = "game not found"
 			case errors.Is(err, queries.ErrPickLocked):
 				results[i].Error = "picks are locked for this game"
+			case errors.Is(err, queries.ErrPickNotIncluded):
+				results[i].Error = "this game is not part of picks this week"
 			default:
 				results[i].Error = "could not save pick"
 			}

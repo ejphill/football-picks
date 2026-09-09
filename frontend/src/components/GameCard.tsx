@@ -49,9 +49,11 @@ export default function GameCard({ game, selected, locked: isLocked, onSelect }:
     const showScore = isLocked && score != null
 
     const base =
-      'flex-1 flex flex-col items-center py-3 px-2 rounded-lg border-2 transition-all select-none'
+      'relative flex-1 flex flex-col items-center py-3 px-2 rounded-lg border-2 transition-all select-none'
     const style = isLocked
-      ? 'border-gray-100 bg-gray-50 cursor-not-allowed opacity-60'
+      ? isPicked
+        ? 'border-indigo-300 bg-indigo-50 cursor-not-allowed'
+        : 'border-gray-100 bg-gray-50 cursor-not-allowed opacity-60'
       : isPicked
         ? 'border-indigo-500 bg-indigo-50 cursor-pointer'
         : 'border-gray-200 hover:border-gray-400 bg-white cursor-pointer'
@@ -64,6 +66,11 @@ export default function GameCard({ game, selected, locked: isLocked, onSelect }:
         aria-pressed={isPicked}
         disabled={isLocked}
       >
+        {isPicked && (
+          <span className="absolute top-1 right-1 text-[10px] font-semibold text-indigo-600 uppercase tracking-wide">
+            Your pick
+          </span>
+        )}
         <span className="flex items-center gap-2">
           <span className="text-lg font-bold text-gray-800">{abbr}</span>
           {showScore && <span className="text-lg font-bold text-gray-800">{score}</span>}

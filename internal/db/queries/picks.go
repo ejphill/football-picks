@@ -18,12 +18,20 @@ var ErrPickNotFound = errors.New("pick not found")
 // lock check is inside the query, so there's no TOCTOU window
 var ErrPickLocked = errors.New("pick locked: game has kicked off")
 
+// ErrPickNotIncluded is returned for a game an admin has excluded from
+// picks (e.g. a Thursday game) — distinct from ErrPickLocked so the caller
+// can give a more accurate message than "the game has kicked off".
+var ErrPickNotIncluded = errors.New("pick not allowed: game excluded from picks")
+
+// GetPicksByUserAndWeek only returns picks for included games, matching what
+// GET /games shows — a pick for a game excluded after the fact shouldn't
+// linger in the user's pick list.
 func GetPicksByUserAndWeek(ctx context.Context, pool *pgxpool.Pool, userID uuid.UUID, weekID int) ([]models.Pick, error) {
 	rows, err := pool.Query(ctx, `
 		SELECT p.id, p.user_id, p.game_id, p.picked_team, p.is_correct, p.created_at, p.updated_at
 		FROM picks p
 		JOIN games g ON p.game_id = g.id
-		WHERE p.user_id = $1 AND g.week_id = $2
+		WHERE p.user_id = $1 AND g.week_id = $2 AND g.included_in_picks = TRUE
 		ORDER BY g.kickoff_at ASC
 	`, userID, weekID)
 	if err != nil {
@@ -42,8 +50,9 @@ func GetPicksByUserAndWeek(ctx context.Context, pool *pgxpool.Pool, userID uuid.
 	return picks, rows.Err()
 }
 
-// Lock is enforced atomically: kicked-off game → INSERT finds no row → ErrNoRows.
-// The follow-up EXISTS check then distinguishes "game not found" vs ErrPickLocked.
+// Lock is enforced atomically: kicked-off or excluded game → INSERT finds no
+// row → ErrNoRows. The follow-up SELECT then distinguishes "game not found"
+// vs ErrPickLocked vs ErrPickNotIncluded.
 func UpsertPick(ctx context.Context, pool *pgxpool.Pool, userID, gameID uuid.UUID, pickedTeam string) (*models.Pick, bool, error) {
 	p := &models.Pick{}
 	var created bool
@@ -54,6 +63,7 @@ func UpsertPick(ctx context.Context, pool *pgxpool.Pool, userID, gameID uuid.UUI
 		FROM games g
 		WHERE g.id = $2
 		  AND g.kickoff_at > NOW()
+		  AND g.included_in_picks = TRUE
 		ON CONFLICT (user_id, game_id) DO UPDATE SET
 		    picked_team = EXCLUDED.picked_team,
 		    is_correct  = EXCLUDED.is_correct,
@@ -69,12 +79,17 @@ func UpsertPick(ctx context.Context, pool *pgxpool.Pool, userID, gameID uuid.UUI
 		return nil, false, fmt.Errorf("upsert pick: %w", err)
 	}
 
-	// ErrNoRows means either the game doesn't exist or it has kicked off.
-	// Check on the error path so the happy path stays a single query.
-	var exists bool
-	_ = pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM games WHERE id = $1)`, gameID).Scan(&exists)
-	if !exists {
+	// ErrNoRows means the game doesn't exist, has kicked off, or is excluded
+	// from picks. Check on the error path so the happy path stays one query.
+	var kickedOff, notIncluded bool
+	scanErr := pool.QueryRow(ctx,
+		`SELECT kickoff_at <= NOW(), NOT included_in_picks FROM games WHERE id = $1`,
+		gameID).Scan(&kickedOff, &notIncluded)
+	if errors.Is(scanErr, pgx.ErrNoRows) {
 		return nil, false, pgx.ErrNoRows
+	}
+	if notIncluded {
+		return nil, false, ErrPickNotIncluded
 	}
 	return nil, false, ErrPickLocked
 }
