@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/evan/football-picks/internal/db/queries"
@@ -122,7 +121,7 @@ func parseEvent(event Event, weekID int) (*models.Game, error) {
 	}
 
 	if len(comp.Odds) > 0 {
-		g.Spread = parseSpread(comp.Odds[0].Details)
+		g.Spread = comp.Odds[0].Spread
 	}
 
 	return g, nil
@@ -148,17 +147,4 @@ func determineWinner(home, away int) string {
 	default:
 		return "tie"
 	}
-}
-
-// parseSpread extracts the numeric spread from strings like "KC -3.5" or "NE +7".
-func parseSpread(details string) *float64 {
-	parts := strings.Fields(details)
-	for _, p := range parts {
-		if len(p) > 0 && (p[0] == '-' || p[0] == '+' || (p[0] >= '0' && p[0] <= '9')) {
-			if v, err := strconv.ParseFloat(p, 64); err == nil {
-				return &v
-			}
-		}
-	}
-	return nil
 }

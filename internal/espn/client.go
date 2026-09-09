@@ -70,7 +70,11 @@ type Team struct {
 }
 
 type Odds struct {
-	Details string `json:"details"` // e.g. "KC -3.5"
+	// Spread is home-team-relative: negative means home favored, positive
+	// means away favored. Prefer this over Details, which is just a
+	// display string ("KC -3.5") and doesn't say whether KC is home or away.
+	Spread  *float64 `json:"spread"`
+	Details string   `json:"details"`
 }
 
 type EventStatus struct {

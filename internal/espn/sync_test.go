@@ -17,7 +17,7 @@ func TestParseESPNEvent(t *testing.T) {
 					{HomeAway: "home", Team: Team{Abbreviation: "KC", DisplayName: "Kansas City Chiefs"}, Score: "24"},
 					{HomeAway: "away", Team: Team{Abbreviation: "DET", DisplayName: "Detroit Lions"}, Score: "17"},
 				},
-				Odds: []Odds{{Details: "KC -3.5"}},
+				Odds: []Odds{{Spread: ptr(-3.5), Details: "KC -3.5"}},
 				Status: EventStatus{Type: StatusType{Name: "STATUS_FINAL", Completed: true}},
 			},
 		},
@@ -71,28 +71,33 @@ func TestDetermineWinner(t *testing.T) {
 	}
 }
 
-func TestParseSpread(t *testing.T) {
-	cases := []struct {
-		details string
-		want    *float64
-	}{
-		{"KC -3.5", ptr(-3.5)},
-		{"NE +7", ptr(7.0)},
-		{"EVEN", nil},
-		{"PHI -6", ptr(-6.0)},
-		{"", nil},
+// Regression test: the away team being favored used to always render as the
+// home team favored, because the old parseSpread just took the sign off
+// ESPN's display string ("DET -3.5") without checking whether that team was
+// home or away. comp.Odds[0].Spread is already home-relative, so this must
+// come through positive (away favored) even though DET's own line is negative.
+func TestParseESPNEvent_AwayTeamFavored(t *testing.T) {
+	event := Event{
+		ID:   "401547418",
+		Date: "2025-09-07T17:00:00Z",
+		Competitions: []Competition{
+			{
+				Competitors: []Competitor{
+					{HomeAway: "home", Team: Team{Abbreviation: "KC", DisplayName: "Kansas City Chiefs"}, Score: "17"},
+					{HomeAway: "away", Team: Team{Abbreviation: "DET", DisplayName: "Detroit Lions"}, Score: "24"},
+				},
+				Odds:   []Odds{{Spread: ptr(3.5), Details: "DET -3.5"}},
+				Status: EventStatus{Type: StatusType{Name: "STATUS_SCHEDULED"}},
+			},
+		},
 	}
-	for _, tc := range cases {
-		got := parseSpread(tc.details)
-		if tc.want == nil {
-			if got != nil {
-				t.Errorf("parseSpread(%q) = %v, want nil", tc.details, *got)
-			}
-		} else {
-			if got == nil || *got != *tc.want {
-				t.Errorf("parseSpread(%q) = %v, want %v", tc.details, got, *tc.want)
-			}
-		}
+
+	g, err := parseEvent(event, 1)
+	if err != nil {
+		t.Fatalf("parseEvent error: %v", err)
+	}
+	if g.Spread == nil || *g.Spread != 3.5 {
+		t.Errorf("Spread: got %v, want 3.5 (away favored)", g.Spread)
 	}
 }
 
