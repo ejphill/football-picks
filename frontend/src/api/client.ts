@@ -3,6 +3,7 @@ import { supabase } from './supabase'
 import type {
   Game,
   Pick,
+  PickSubmitResult,
   Season,
   User,
   Week,
@@ -55,8 +56,8 @@ export const getGame = (gameId: string) => api.get<Game>(`/games/${gameId}`)
 export const getPicks = (week: number, season: number) =>
   api.get<Pick[]>(`/picks?week=${week}&season=${season}`)
 
-export const submitPick = (gameId: string, pickedTeam: 'home' | 'away') =>
-  api.post<Pick>('/picks', { game_id: gameId, picked_team: pickedTeam })
+export const submitPicks = (picks: { game_id: string; picked_team: 'home' | 'away' }[]) =>
+  api.post<PickSubmitResult[]>('/picks', picks)
 
 export const deletePick = (gameId: string) => api.delete(`/picks/${gameId}`)
 

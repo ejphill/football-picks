@@ -1,7 +1,6 @@
 import { create } from 'zustand'
-import axios from 'axios'
 import type { Pick } from '../types'
-import { getPicks, submitPick as apiSubmitPick } from '../api/client'
+import { getPicks, submitPicks as apiSubmitPicks } from '../api/client'
 
 interface PicksState {
   picksByGameId: Record<string, Pick>
@@ -9,10 +8,11 @@ interface PicksState {
   error: string | null
   submitError: string | null
   loadPicks: (week: number, season: number) => Promise<void>
-  submitPick: (gameId: string, team: 'home' | 'away') => Promise<void>
+  // Submits all picks in one request; returns true only if every pick saved.
+  submitPicks: (picks: { gameId: string; team: 'home' | 'away' }[]) => Promise<boolean>
 }
 
-export const usePicksStore = create<PicksState>((set, get) => ({
+export const usePicksStore = create<PicksState>((set) => ({
   picksByGameId: {},
   loading: false,
   error: null,
@@ -32,22 +32,35 @@ export const usePicksStore = create<PicksState>((set, get) => ({
     }
   },
 
-  submitPick: async (gameId, team) => {
-    // Optimistic update.
-    const prev = get().picksByGameId
-    const optimistic = { ...prev[gameId], game_id: gameId, picked_team: team } as Pick
-    set({ picksByGameId: { ...prev, [gameId]: optimistic } })
-
+  submitPicks: async (picks) => {
+    set({ submitError: null })
     try {
-      const { data } = await apiSubmitPick(gameId, team)
-      set((s) => ({ picksByGameId: { ...s.picksByGameId, [gameId]: data }, submitError: null }))
-    } catch (e) {
-      set({ picksByGameId: prev })
-      if (axios.isAxiosError(e) && e.response?.status === 423) {
-        set({ submitError: 'Picks are locked for this game.' })
-      } else {
-        set({ submitError: 'Something went wrong submitting your pick.' })
+      const { data: results } = await apiSubmitPicks(
+        picks.map((p) => ({ game_id: p.gameId, picked_team: p.team }))
+      )
+
+      const saved: Record<string, Pick> = {}
+      const failures: string[] = []
+      for (const r of results) {
+        if (r.pick) saved[r.game_id] = r.pick
+        else failures.push(r.error ?? 'Something went wrong')
       }
+      set((s) => ({ picksByGameId: { ...s.picksByGameId, ...saved } }))
+
+      if (failures.length > 0) {
+        const unique = [...new Set(failures)]
+        set({
+          submitError:
+            failures.length === 1
+              ? unique[0]
+              : `${failures.length} picks couldn't be saved: ${unique.join(', ')}`,
+        })
+        return false
+      }
+      return true
+    } catch {
+      set({ submitError: 'Something went wrong submitting your picks.' })
+      return false
     }
   },
 }))

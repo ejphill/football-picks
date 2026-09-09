@@ -52,6 +52,12 @@ export interface Pick {
   updated_at: string
 }
 
+export interface PickSubmitResult {
+  game_id: string
+  pick?: Pick
+  error?: string
+}
+
 export interface PickView {
   game_id: string
   picked_team: 'home' | 'away' | ''

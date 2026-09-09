@@ -50,8 +50,19 @@ func (h *PicksHandler) List(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, picks)
 }
 
+// PickResult is one item's outcome from a batch submit — exactly one of
+// Pick/Error is set, letting some picks in a batch succeed while others
+// (e.g. a game that just locked) fail independently.
+type PickResult struct {
+	GameID string       `json:"game_id"`
+	Pick   *models.Pick `json:"pick,omitempty"`
+	Error  string       `json:"error,omitempty"`
+}
+
 // POST /api/v1/picks
-// Body: { "game_id": "<uuid>", "picked_team": "home" | "away" }
+// Body: [{ "game_id": "<uuid>", "picked_team": "home" | "away" }, ...]
+// Each pick is validated and locked independently, so one locked/invalid
+// game in the batch doesn't block the others from saving.
 func (h *PicksHandler) Submit(w http.ResponseWriter, r *http.Request) {
 	uid := middleware.SupabaseUIDFromContext(r.Context())
 
@@ -61,7 +72,7 @@ func (h *PicksHandler) Submit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var body struct {
+	var body []struct {
 		GameID     string `json:"game_id"`
 		PickedTeam string `json:"picked_team"`
 	}
@@ -69,35 +80,41 @@ func (h *PicksHandler) Submit(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-
-	gameID, err := uuid.Parse(body.GameID)
-	if err != nil {
-		respondError(w, http.StatusBadRequest, "invalid game_id")
-		return
-	}
-	if body.PickedTeam != "home" && body.PickedTeam != "away" {
-		respondError(w, http.StatusBadRequest, "picked_team must be 'home' or 'away'")
+	if len(body) == 0 {
+		respondError(w, http.StatusBadRequest, "at least one pick is required")
 		return
 	}
 
-	pick, created, err := queries.UpsertPick(r.Context(), h.pool, user.ID, gameID, body.PickedTeam)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			respondError(w, http.StatusNotFound, "game not found")
-			return
+	results := make([]PickResult, len(body))
+	for i, item := range body {
+		results[i].GameID = item.GameID
+
+		gameID, err := uuid.Parse(item.GameID)
+		if err != nil {
+			results[i].Error = "invalid game_id"
+			continue
 		}
-		if errors.Is(err, queries.ErrPickLocked) {
-			respondError(w, http.StatusLocked, "picks are locked for this game")
-			return
+		if item.PickedTeam != "home" && item.PickedTeam != "away" {
+			results[i].Error = "picked_team must be 'home' or 'away'"
+			continue
 		}
-		respondError(w, http.StatusInternalServerError, "could not save pick")
-		return
+
+		pick, _, err := queries.UpsertPick(r.Context(), h.pool, user.ID, gameID, item.PickedTeam)
+		if err != nil {
+			switch {
+			case errors.Is(err, pgx.ErrNoRows):
+				results[i].Error = "game not found"
+			case errors.Is(err, queries.ErrPickLocked):
+				results[i].Error = "picks are locked for this game"
+			default:
+				results[i].Error = "could not save pick"
+			}
+			continue
+		}
+		results[i].Pick = pick
 	}
-	status := http.StatusOK
-	if created {
-		status = http.StatusCreated
-	}
-	respondJSON(w, status, pick)
+
+	respondJSON(w, http.StatusOK, results)
 }
 
 // DELETE /api/v1/picks/{gameId}

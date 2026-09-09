@@ -15,7 +15,7 @@ function sectionLabel(day: string, games: Game[]): string {
 }
 
 export default function Picks() {
-  const { picksByGameId, loadPicks, submitPick, submitError } = usePicksStore()
+  const { picksByGameId, loadPicks, submitPicks, submitError } = usePicksStore()
   const [week, setWeek] = useState<Week | null>(null)
   const [games, setGames] = useState<Game[]>([])
   const [gamesLoading, setGamesLoading] = useState(true)
@@ -65,11 +65,12 @@ export default function Picks() {
   const handleSubmit = async () => {
     setSubmitting(true)
     try {
-      await Promise.all(
-        Object.entries(draft).map(([gameId, team]) => submitPick(gameId, team))
-      )
-      setSubmitted(true)
-      setEditing(false)
+      const picks = Object.entries(draft).map(([gameId, team]) => ({ gameId, team }))
+      const allSaved = await submitPicks(picks)
+      if (allSaved) {
+        setSubmitted(true)
+        setEditing(false)
+      }
     } finally {
       setSubmitting(false)
     }

@@ -13,7 +13,6 @@ import (
 	"github.com/evan/football-picks/internal/api/handlers"
 	"github.com/evan/football-picks/internal/api/middleware"
 	"github.com/evan/football-picks/internal/cache"
-	"github.com/evan/football-picks/internal/models"
 	"github.com/evan/football-picks/internal/testutil"
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -30,8 +29,12 @@ func TestPicksSubmit(t *testing.T) {
 		game := testutil.SeedGame(t, pool, week.ID, "espn-sub-1", "KC", "DET", "scheduled", nil)
 
 		rr := doPicksSubmit(t, pool, user.SupabaseUID, game.ID.String(), "home")
-		if rr.Code != http.StatusCreated {
+		if rr.Code != http.StatusOK {
 			t.Fatalf("status: got %d — body: %s", rr.Code, rr.Body.String())
+		}
+		result := decodeSingleResult(t, rr)
+		if result.Pick == nil || result.Error != "" {
+			t.Fatalf("expected saved pick, got %+v", result)
 		}
 	})
 
@@ -43,8 +46,9 @@ func TestPicksSubmit(t *testing.T) {
 		game := testutil.SeedGame(t, pool, week.ID, "espn-ps-2", "KC", "DET", "in_progress", nil)
 
 		rr := doPicksSubmit(t, pool, user.SupabaseUID, game.ID.String(), "away")
-		if rr.Code != http.StatusCreated {
-			t.Errorf("status: got %d, want %d — body: %s", rr.Code, http.StatusCreated, rr.Body.String())
+		result := decodeSingleResult(t, rr)
+		if result.Pick == nil || result.Error != "" {
+			t.Errorf("expected saved pick — body: %s", rr.Body.String())
 		}
 	})
 
@@ -57,18 +61,14 @@ func TestPicksSubmit(t *testing.T) {
 		game := testutil.SeedGame(t, pool, week.ID, "espn-ps-3", "KC", "DET", "final", &winner)
 
 		rr := doPicksSubmit(t, pool, user.SupabaseUID, game.ID.String(), "home")
-		if rr.Code != http.StatusCreated {
-			t.Fatalf("status: got %d — body: %s", rr.Code, rr.Body.String())
+		result := decodeSingleResult(t, rr)
+		if result.Pick == nil {
+			t.Fatalf("expected saved pick — body: %s", rr.Body.String())
 		}
-
-		var pick models.Pick
-		if err := json.Unmarshal(rr.Body.Bytes(), &pick); err != nil {
-			t.Fatalf("decode response: %v", err)
-		}
-		if pick.IsCorrect == nil {
+		if result.Pick.IsCorrect == nil {
 			t.Fatal("is_correct should be set on final game")
 		}
-		if !*pick.IsCorrect {
+		if !*result.Pick.IsCorrect {
 			t.Error("picking the winner should be correct")
 		}
 	})
@@ -83,13 +83,9 @@ func TestPicksSubmit(t *testing.T) {
 		doPicksSubmit(t, pool, user.SupabaseUID, game.ID.String(), "home")
 		rr2 := doPicksSubmit(t, pool, user.SupabaseUID, game.ID.String(), "away")
 
-		if rr2.Code != http.StatusOK {
-			t.Fatalf("second pick: status %d — body: %s", rr2.Code, rr2.Body.String())
-		}
-		var pick models.Pick
-		json.Unmarshal(rr2.Body.Bytes(), &pick)
-		if pick.PickedTeam != "away" {
-			t.Errorf("pick should be updated to 'away', got %q", pick.PickedTeam)
+		result := decodeSingleResult(t, rr2)
+		if result.Pick == nil || result.Pick.PickedTeam != "away" {
+			t.Errorf("pick should be updated to 'away', got %+v", result)
 		}
 	})
 
@@ -101,16 +97,30 @@ func TestPicksSubmit(t *testing.T) {
 		}
 	})
 
-	t.Run("400 for invalid game_id", func(t *testing.T) {
+	t.Run("invalid game_id reported per-item, other picks unaffected", func(t *testing.T) {
 		testutil.ResetDB(t, pool)
+		season := testutil.SeedSeason(t, pool, 2025, true)
+		week := testutil.SeedWeek(t, pool, season.ID, 1, time.Now().Add(time.Hour))
 		user := testutil.SeedUser(t, pool, "uid-sub-2", "SubUser2", "sub2@test.com")
-		rr := doPicksSubmit(t, pool, user.SupabaseUID, "not-a-uuid", "home")
-		if rr.Code != http.StatusBadRequest {
-			t.Errorf("status: got %d, want 400", rr.Code)
+		game := testutil.SeedGame(t, pool, week.ID, "espn-sub-2b", "NE", "MIA", "scheduled", nil)
+
+		rr := doPicksSubmitBatch(t, pool, user.SupabaseUID, []pickInput{
+			{GameID: "not-a-uuid", PickedTeam: "home"},
+			{GameID: game.ID.String(), PickedTeam: "home"},
+		})
+		if rr.Code != http.StatusOK {
+			t.Fatalf("status: got %d, want 200 — body: %s", rr.Code, rr.Body.String())
+		}
+		results := decodeResults(t, rr)
+		if results[0].Error == "" || results[0].Pick != nil {
+			t.Errorf("item 0: expected error, got %+v", results[0])
+		}
+		if results[1].Pick == nil {
+			t.Errorf("item 1: expected saved pick despite item 0's error, got %+v", results[1])
 		}
 	})
 
-	t.Run("400 for invalid picked_team", func(t *testing.T) {
+	t.Run("invalid picked_team reported per-item", func(t *testing.T) {
 		testutil.ResetDB(t, pool)
 		season := testutil.SeedSeason(t, pool, 2025, true)
 		week := testutil.SeedWeek(t, pool, season.ID, 1, time.Now().Add(time.Hour))
@@ -118,30 +128,40 @@ func TestPicksSubmit(t *testing.T) {
 		game := testutil.SeedGame(t, pool, week.ID, "espn-sub-2", "KC", "DET", "scheduled", nil)
 
 		rr := doPicksSubmit(t, pool, user.SupabaseUID, game.ID.String(), "invalid")
-		if rr.Code != http.StatusBadRequest {
-			t.Errorf("status: got %d, want 400", rr.Code)
+		result := decodeSingleResult(t, rr)
+		if result.Error == "" || result.Pick != nil {
+			t.Errorf("expected error, got %+v", result)
 		}
 	})
 
-	t.Run("404 for unknown game", func(t *testing.T) {
+	t.Run("unknown game reported per-item", func(t *testing.T) {
 		testutil.ResetDB(t, pool)
 		user := testutil.SeedUser(t, pool, "uid-sub-4", "SubUser4", "sub4@test.com")
 		rr := doPicksSubmit(t, pool, user.SupabaseUID, "00000000-0000-0000-0000-000000000001", "home")
-		if rr.Code != http.StatusNotFound {
-			t.Errorf("status: got %d, want 404", rr.Code)
+		result := decodeSingleResult(t, rr)
+		if result.Error == "" || result.Pick != nil {
+			t.Errorf("expected error, got %+v", result)
 		}
 	})
 
-	t.Run("423 for locked game", func(t *testing.T) {
+	t.Run("locked game reported per-item, other picks unaffected", func(t *testing.T) {
 		testutil.ResetDB(t, pool)
 		season := testutil.SeedSeason(t, pool, 2025, true)
-		week := testutil.SeedWeek(t, pool, season.ID, 1, time.Now().Add(-time.Hour))
+		week := testutil.SeedWeek(t, pool, season.ID, 1, time.Now().Add(time.Hour))
 		user := testutil.SeedUser(t, pool, "uid-sub-5", "SubUser5", "sub5@test.com")
-		game := testutil.SeedGameAt(t, pool, week.ID, "espn-sub-3", "KC", "DET", "in_progress", nil, time.Now().Add(-30*time.Minute))
+		lockedGame := testutil.SeedGameAt(t, pool, week.ID, "espn-sub-3", "KC", "DET", "in_progress", nil, time.Now().Add(-30*time.Minute))
+		openGame := testutil.SeedGame(t, pool, week.ID, "espn-sub-3b", "NE", "MIA", "scheduled", nil)
 
-		rr := doPicksSubmit(t, pool, user.SupabaseUID, game.ID.String(), "home")
-		if rr.Code != http.StatusLocked {
-			t.Errorf("status: got %d, want 423", rr.Code)
+		rr := doPicksSubmitBatch(t, pool, user.SupabaseUID, []pickInput{
+			{GameID: lockedGame.ID.String(), PickedTeam: "home"},
+			{GameID: openGame.ID.String(), PickedTeam: "home"},
+		})
+		results := decodeResults(t, rr)
+		if results[0].Error != "picks are locked for this game" {
+			t.Errorf("item 0: got error %q, want lock error", results[0].Error)
+		}
+		if results[1].Pick == nil {
+			t.Errorf("item 1: expected saved pick despite item 0 being locked, got %+v", results[1])
 		}
 	})
 
@@ -149,6 +169,15 @@ func TestPicksSubmit(t *testing.T) {
 		testutil.ResetDB(t, pool)
 		user := testutil.SeedUser(t, pool, "uid-sub-6", "SubUser6", "sub6@test.com")
 		rr := doPicksSubmitRaw(t, pool, user.SupabaseUID, []byte("not json"))
+		if rr.Code != http.StatusBadRequest {
+			t.Errorf("status: got %d, want 400", rr.Code)
+		}
+	})
+
+	t.Run("400 for empty batch", func(t *testing.T) {
+		testutil.ResetDB(t, pool)
+		user := testutil.SeedUser(t, pool, "uid-sub-7", "SubUser7", "sub7@test.com")
+		rr := doPicksSubmitBatch(t, pool, user.SupabaseUID, []pickInput{})
 		if rr.Code != http.StatusBadRequest {
 			t.Errorf("status: got %d, want 400", rr.Code)
 		}
@@ -294,10 +323,38 @@ func TestPicksDelete(t *testing.T) {
 	})
 }
 
+type pickInput struct {
+	GameID     string `json:"game_id"`
+	PickedTeam string `json:"picked_team"`
+}
+
 func doPicksSubmit(t *testing.T, pool *pgxpool.Pool, uid, gameID, pickedTeam string) *httptest.ResponseRecorder {
 	t.Helper()
-	body, _ := json.Marshal(map[string]string{"game_id": gameID, "picked_team": pickedTeam})
+	return doPicksSubmitBatch(t, pool, uid, []pickInput{{GameID: gameID, PickedTeam: pickedTeam}})
+}
+
+func doPicksSubmitBatch(t *testing.T, pool *pgxpool.Pool, uid string, picks []pickInput) *httptest.ResponseRecorder {
+	t.Helper()
+	body, _ := json.Marshal(picks)
 	return doPicksSubmitRaw(t, pool, uid, body)
+}
+
+func decodeResults(t *testing.T, rr *httptest.ResponseRecorder) []handlers.PickResult {
+	t.Helper()
+	var results []handlers.PickResult
+	if err := json.Unmarshal(rr.Body.Bytes(), &results); err != nil {
+		t.Fatalf("decode response: %v — body: %s", err, rr.Body.String())
+	}
+	return results
+}
+
+func decodeSingleResult(t *testing.T, rr *httptest.ResponseRecorder) handlers.PickResult {
+	t.Helper()
+	results := decodeResults(t, rr)
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d — body: %s", len(results), rr.Body.String())
+	}
+	return results[0]
 }
 
 func doPicksSubmitRaw(t *testing.T, pool *pgxpool.Pool, uid string, body []byte) *httptest.ResponseRecorder {
