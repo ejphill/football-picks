@@ -55,7 +55,7 @@ func NewRouter(pool *pgxpool.Pool, jwks keyfunc.Keyfunc, corsOrigin string, lbCa
 
 	usersH := handlers.NewUsersHandler(pool, userCache)
 	gamesH := handlers.NewGamesHandler(pool)
-	picksH := handlers.NewPicksHandler(pool, userCache)
+	picksH := handlers.NewPicksHandler(pool, userCache, lbCache)
 	lbH := handlers.NewLeaderboardHandler(pool, userCache, lbCache)
 	announcementsH := handlers.NewAnnouncementsHandler(pool)
 

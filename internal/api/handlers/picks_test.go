@@ -377,7 +377,7 @@ func decodeSingleResult(t *testing.T, rr *httptest.ResponseRecorder) handlers.Pi
 
 func doPicksSubmitRaw(t *testing.T, pool *pgxpool.Pool, uid string, body []byte) *httptest.ResponseRecorder {
 	t.Helper()
-	ph := handlers.NewPicksHandler(pool, cache.NewUserCache(pool, nil))
+	ph := handlers.NewPicksHandler(pool, cache.NewUserCache(pool, nil), cache.NewLeaderboardCache(nil))
 	r := httptest.NewRequest(http.MethodPost, "/api/v1/picks", bytes.NewReader(body))
 	r.Header.Set("Content-Type", "application/json")
 	r = r.WithContext(context.WithValue(r.Context(), middleware.ContextKeySupabaseUID, uid))
@@ -393,7 +393,7 @@ func doPicksList(t *testing.T, pool *pgxpool.Pool, uid string, week, season int)
 
 func doPicksListRaw(t *testing.T, pool *pgxpool.Pool, uid, query string) *httptest.ResponseRecorder {
 	t.Helper()
-	ph := handlers.NewPicksHandler(pool, cache.NewUserCache(pool, nil))
+	ph := handlers.NewPicksHandler(pool, cache.NewUserCache(pool, nil), cache.NewLeaderboardCache(nil))
 	r := httptest.NewRequest(http.MethodGet, "/api/v1/picks"+query, nil)
 	r = r.WithContext(context.WithValue(r.Context(), middleware.ContextKeySupabaseUID, uid))
 	rr := httptest.NewRecorder()
@@ -403,7 +403,7 @@ func doPicksListRaw(t *testing.T, pool *pgxpool.Pool, uid, query string) *httpte
 
 func doPicksDelete(t *testing.T, pool *pgxpool.Pool, uid, gameID string) *httptest.ResponseRecorder {
 	t.Helper()
-	ph := handlers.NewPicksHandler(pool, cache.NewUserCache(pool, nil))
+	ph := handlers.NewPicksHandler(pool, cache.NewUserCache(pool, nil), cache.NewLeaderboardCache(nil))
 	r := httptest.NewRequest(http.MethodDelete, "/api/v1/picks/"+gameID, nil)
 	r = r.WithContext(context.WithValue(r.Context(), middleware.ContextKeySupabaseUID, uid))
 	rr := httptest.NewRecorder()

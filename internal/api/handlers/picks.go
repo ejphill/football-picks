@@ -18,10 +18,11 @@ import (
 type PicksHandler struct {
 	pool  *pgxpool.Pool
 	users *cache.UserCache
+	lb    *cache.LeaderboardCache
 }
 
-func NewPicksHandler(pool *pgxpool.Pool, users *cache.UserCache) *PicksHandler {
-	return &PicksHandler{pool: pool, users: users}
+func NewPicksHandler(pool *pgxpool.Pool, users *cache.UserCache, lb *cache.LeaderboardCache) *PicksHandler {
+	return &PicksHandler{pool: pool, users: users, lb: lb}
 }
 
 // GET /api/v1/picks?week=1&season=2025
@@ -116,6 +117,16 @@ func (h *PicksHandler) Submit(w http.ResponseWriter, r *http.Request) {
 		results[i].Pick = pick
 	}
 
+	// Invalidate the cached weekly scores so a newly submitted pick shows up
+	// immediately instead of waiting for a game to finish (which is the only
+	// other thing that invalidates it) or the 1h TTL fallback.
+	for _, res := range results {
+		if res.Pick != nil {
+			h.lb.InvalidateScores()
+			break
+		}
+	}
+
 	respondJSON(w, http.StatusOK, results)
 }
 
@@ -148,5 +159,6 @@ func (h *PicksHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusInternalServerError, "could not delete pick")
 		return
 	}
+	h.lb.InvalidateScores()
 	w.WriteHeader(http.StatusNoContent)
 }
