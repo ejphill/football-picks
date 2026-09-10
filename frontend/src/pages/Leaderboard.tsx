@@ -113,7 +113,6 @@ export default function Leaderboard() {
         <WeeklyView
           games={weeklyData?.games ?? []}
           entries={weeklyData?.entries ?? []}
-          locked={weeklyData?.locked ?? false}
           loading={weeklyLoading}
           currentUserId={currentUser?.id}
         />
@@ -127,13 +126,11 @@ export default function Leaderboard() {
 function WeeklyView({
   games,
   entries,
-  locked,
   loading,
   currentUserId,
 }: {
   games: WeeklyLeaderboardGame[]
   entries: WeeklyLeaderboardEntry[]
-  locked: boolean
   loading: boolean
   currentUserId?: string
 }) {
@@ -157,11 +154,9 @@ function WeeklyView({
 
   return (
     <div className="space-y-3">
-      {!locked && (
-        <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-          Picks are hidden until lock time. Only your own picks are shown.
-        </p>
-      )}
+      <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+        Others' picks reveal once each game kicks off — yours are always shown to you.
+      </p>
 
       <div className="overflow-x-auto rounded-xl border border-gray-200">
         <table className="w-full text-sm border-collapse">
@@ -193,9 +188,8 @@ function WeeklyView({
                 </td>
                 {sorted.map((entry) => {
                   const pick = pickMap[entry.user_id]?.[game.id]
-                  const isMe = entry.user_id === currentUserId
 
-                  if (!pick || (!locked && !isMe)) {
+                  if (!pick) {
                     return (
                       <td key={entry.user_id} className="px-3 py-2 text-center text-gray-300">
                         —

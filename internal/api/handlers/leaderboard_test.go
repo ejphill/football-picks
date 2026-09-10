@@ -36,7 +36,6 @@ func TestWeeklyLeaderboard(t *testing.T) {
 		var body struct {
 			Entries []map[string]interface{} `json:"entries"`
 			Total   int                      `json:"total"`
-			Locked  bool                     `json:"locked"`
 		}
 		if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
 			t.Fatalf("decode: %v", err)
@@ -44,12 +43,9 @@ func TestWeeklyLeaderboard(t *testing.T) {
 		if body.Total != 1 {
 			t.Errorf("total: got %d, want 1", body.Total)
 		}
-		if !body.Locked {
-			t.Error("expected locked=true for past week")
-		}
 	})
 
-	t.Run("before lock time — other users picks hidden", func(t *testing.T) {
+	t.Run("before this game's kickoff — other users' picks hidden", func(t *testing.T) {
 		testutil.ResetDB(t, pool)
 		season := testutil.SeedSeason(t, pool, 2025, true)
 		week := testutil.SeedWeek(t, pool, season.ID, 1, time.Now().Add(2*time.Hour))
@@ -67,14 +63,10 @@ func TestWeeklyLeaderboard(t *testing.T) {
 		}
 
 		var body struct {
-			Locked  bool                     `json:"locked"`
 			Entries []map[string]interface{} `json:"entries"`
 		}
 		if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
 			t.Fatalf("decode: %v", err)
-		}
-		if body.Locked {
-			t.Error("locked should be false before lock time")
 		}
 
 		for _, entry := range body.Entries {
@@ -83,22 +75,17 @@ func TestWeeklyLeaderboard(t *testing.T) {
 			var picks []map[string]interface{}
 			json.Unmarshal(picksRaw, &picks)
 
-			for _, p := range picks {
-				pickedTeam := fmt.Sprintf("%v", p["picked_team"])
-				if uid == viewer.ID.String() {
-					if pickedTeam == "" {
-						t.Error("viewer should see their own pick")
-					}
-				} else {
-					if pickedTeam != "" {
-						t.Errorf("other user's pick should be hidden before lock, got %q", pickedTeam)
-					}
+			if uid == viewer.ID.String() {
+				if len(picks) == 0 {
+					t.Error("viewer should see their own pick")
 				}
+			} else if len(picks) != 0 {
+				t.Errorf("other user's pick should be hidden before their game kicks off, got %v", picks)
 			}
 		}
 	})
 
-	t.Run("after lock time — all picks visible", func(t *testing.T) {
+	t.Run("after this game's kickoff — everyone's pick for it is visible", func(t *testing.T) {
 		testutil.ResetDB(t, pool)
 		season := testutil.SeedSeason(t, pool, 2025, true)
 		week := testutil.SeedWeek(t, pool, season.ID, 1, time.Now().Add(-time.Hour))
@@ -106,7 +93,7 @@ func TestWeeklyLeaderboard(t *testing.T) {
 		viewer := testutil.SeedUser(t, pool, "uid-lv-viewer2", "Viewer2", "viewer2@test.com")
 		other := testutil.SeedUser(t, pool, "uid-lv-other2", "Other2", "other2@test.com")
 
-		game := testutil.SeedGame(t, pool, week.ID, "espn-lv-2", "NE", "MIA", "scheduled", nil)
+		game := testutil.SeedGameAt(t, pool, week.ID, "espn-lv-2", "NE", "MIA", "in_progress", nil, time.Now().Add(-30*time.Minute))
 		testutil.SeedPick(t, pool, viewer.ID, game.ID, "home")
 		testutil.SeedPick(t, pool, other.ID, game.ID, "away")
 
@@ -116,24 +103,70 @@ func TestWeeklyLeaderboard(t *testing.T) {
 		}
 
 		var body struct {
-			Locked  bool                     `json:"locked"`
 			Entries []map[string]interface{} `json:"entries"`
 		}
 		if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
 			t.Fatalf("decode: %v", err)
-		}
-		if !body.Locked {
-			t.Error("locked should be true after lock time")
 		}
 
 		for _, entry := range body.Entries {
 			picksRaw, _ := json.Marshal(entry["picks"])
 			var picks []map[string]interface{}
 			json.Unmarshal(picksRaw, &picks)
+			if len(picks) == 0 {
+				t.Errorf("entry %v: expected a visible pick once the game has kicked off", entry["user_id"])
+			}
 			for _, p := range picks {
 				if fmt.Sprintf("%v", p["picked_team"]) == "" {
-					t.Error("all picks should be visible after lock time")
+					t.Error("picked_team should be populated once revealed")
 				}
+			}
+		}
+	})
+
+	t.Run("mixed week — one game started, another hasn't, revealed independently", func(t *testing.T) {
+		testutil.ResetDB(t, pool)
+		season := testutil.SeedSeason(t, pool, 2025, true)
+		week := testutil.SeedWeek(t, pool, season.ID, 1, time.Now().Add(2*time.Hour))
+
+		viewer := testutil.SeedUser(t, pool, "uid-lv-viewer3", "Viewer3", "viewer3@test.com")
+		other := testutil.SeedUser(t, pool, "uid-lv-other3", "Other3", "other3@test.com")
+
+		// e.g. a Wednesday game already underway...
+		startedGame := testutil.SeedGameAt(t, pool, week.ID, "espn-lv-3a", "SF", "SEA", "in_progress", nil, time.Now().Add(-10*time.Minute))
+		// ...while Sunday's games haven't kicked off yet.
+		futureGame := testutil.SeedGame(t, pool, week.ID, "espn-lv-3b", "KC", "DET", "scheduled", nil)
+
+		testutil.SeedPick(t, pool, other.ID, startedGame.ID, "away")
+		testutil.SeedPick(t, pool, other.ID, futureGame.ID, "home")
+		testutil.SeedPick(t, pool, viewer.ID, startedGame.ID, "home")
+		testutil.SeedPick(t, pool, viewer.ID, futureGame.ID, "away")
+
+		resp := doWeeklyLeaderboard(t, pool, viewer.SupabaseUID, 1, 2025)
+		if resp.Code != http.StatusOK {
+			t.Fatalf("status: %d — %s", resp.Code, resp.Body.String())
+		}
+
+		var body struct {
+			Entries []map[string]interface{} `json:"entries"`
+		}
+		if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+
+		for _, entry := range body.Entries {
+			uid := fmt.Sprintf("%v", entry["user_id"])
+			if uid == viewer.ID.String() {
+				continue // own picks always visible, not the interesting case
+			}
+			picksRaw, _ := json.Marshal(entry["picks"])
+			var picks []map[string]interface{}
+			json.Unmarshal(picksRaw, &picks)
+			if len(picks) != 1 {
+				t.Fatalf("other user: expected exactly 1 visible pick (the started game), got %d", len(picks))
+			}
+			if fmt.Sprintf("%v", picks[0]["game_id"]) != startedGame.ID.String() {
+				t.Errorf("other user: visible pick should be for the started game, got game_id %v", picks[0]["game_id"])
 			}
 		}
 	})

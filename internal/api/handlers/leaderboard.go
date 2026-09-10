@@ -59,12 +59,20 @@ func (h *LeaderboardHandler) Weekly(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	locked := time.Now().After(week.PicksLockAt)
-
 	games, err := queries.GetGamesByWeek(r.Context(), h.pool, week.ID)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "internal error")
 		return
+	}
+
+	// A pick is revealed to everyone once that specific game has kicked off
+	// (not when the whole week's nominal boundary passes) — so, e.g., a
+	// Wednesday game's picks reveal at its own kickoff even if Sunday's
+	// games haven't started yet.
+	now := time.Now()
+	gameStarted := make(map[uuid.UUID]bool, len(games))
+	for _, g := range games {
+		gameStarted[g.ID] = now.After(g.KickoffAt)
 	}
 
 	// served from cache when available; full list cached, pagination in-memory
@@ -99,16 +107,21 @@ func (h *LeaderboardHandler) Weekly(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Build per-user pick views with visibility gating.
+	// Build per-user pick views with visibility gating — a pick is included
+	// only once its own game has kicked off, or if it's the viewer's own
+	// pick. Omitted entirely (not a blanked-out entry) when hidden, so the
+	// frontend's existing "no entry for this game" rendering just works.
 	type pickList = []models.PickView
 	userPicks := map[uuid.UUID]pickList{}
 	for _, row := range pagePicks {
-		pv := models.PickView{GameID: row.GameID}
-		if locked || row.UserID == currentUser.ID {
-			pv.PickedTeam = row.PickedTeam
-			pv.IsCorrect = row.IsCorrect
+		if row.UserID != currentUser.ID && !gameStarted[row.GameID] {
+			continue
 		}
-		userPicks[row.UserID] = append(userPicks[row.UserID], pv)
+		userPicks[row.UserID] = append(userPicks[row.UserID], models.PickView{
+			GameID:     row.GameID,
+			PickedTeam: row.PickedTeam,
+			IsCorrect:  row.IsCorrect,
+		})
 	}
 
 	entries := make([]models.WeeklyLeaderboardEntry, 0, len(pageScores))
@@ -131,7 +144,6 @@ func (h *LeaderboardHandler) Weekly(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, map[string]any{
-		"locked":  locked,
 		"games":   games,
 		"entries": entries,
 		"total":   total,

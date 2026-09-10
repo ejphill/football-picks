@@ -82,7 +82,6 @@ export interface WeeklyLeaderboardGame {
 }
 
 export interface WeeklyLeaderboardResponse {
-  locked: boolean
   games: WeeklyLeaderboardGame[]
   entries: WeeklyLeaderboardEntry[]
   total: number
