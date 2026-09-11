@@ -72,9 +72,22 @@ export default function Picks() {
   }
 
   const handleSubmit = async () => {
+    // Only resend picks that actually changed — otherwise re-submitting mid-
+    // week re-sends every already-saved pick too, including ones for games
+    // that have since locked, which the backend correctly (but confusingly)
+    // rejects even though the user never touched them.
+    const changed = Object.entries(draft).filter(
+      ([gameId, team]) => picksByGameId[gameId]?.picked_team !== team
+    )
+    if (changed.length === 0) {
+      setSubmitted(true)
+      setEditing(false)
+      return
+    }
+
     setSubmitting(true)
     try {
-      const picks = Object.entries(draft).map(([gameId, team]) => ({ gameId, team }))
+      const picks = changed.map(([gameId, team]) => ({ gameId, team }))
       const allSaved = await submitPicks(picks)
       if (allSaved) {
         setSubmitted(true)
