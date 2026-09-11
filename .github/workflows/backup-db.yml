@@ -39,7 +39,10 @@ jobs:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: |
           set -euo pipefail
-          pg_dump "$SUPABASE_DB_URL" --no-owner --no-privileges > backup.sql
+          # Call the v17 binary explicitly — the runner image ships a v16
+          # pg_dump on PATH already, and installing v17 alongside it doesn't
+          # reliably win version-selection, so PATH resolution can't be trusted.
+          /usr/lib/postgresql/17/bin/pg_dump "$SUPABASE_DB_URL" --no-owner --no-privileges > backup.sql
           # Guard against a silently-empty dump (e.g. pg_dump errored but the
           # old pipe-to-gzip version masked it) — a real dump is never this small.
           size=$(stat -c%s backup.sql)
