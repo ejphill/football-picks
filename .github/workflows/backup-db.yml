@@ -28,7 +28,18 @@ jobs:
       - name: Dump database
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
-        run: pg_dump "$SUPABASE_DB_URL" --no-owner --no-privileges | gzip > backup.sql.gz
+        run: |
+          set -euo pipefail
+          pg_dump "$SUPABASE_DB_URL" --no-owner --no-privileges > backup.sql
+          # Guard against a silently-empty dump (e.g. pg_dump errored but the
+          # old pipe-to-gzip version masked it) — a real dump is never this small.
+          size=$(stat -c%s backup.sql)
+          if [ "$size" -lt 1000 ]; then
+            echo "::error::pg_dump produced a suspiciously small file (${size} bytes) — treating as a failure."
+            cat backup.sql
+            exit 1
+          fi
+          gzip backup.sql
 
       - name: Push backup to private repo
         env:
