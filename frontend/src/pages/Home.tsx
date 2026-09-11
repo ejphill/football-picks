@@ -3,6 +3,53 @@ import { getActiveWeek, getAnnouncements } from '../api/client'
 import FormattedText from '../components/FormattedText'
 import type { Announcement, Week } from '../types'
 
+function HowItWorks() {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center justify-between px-5 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
+      >
+        How the league works
+        <span className="text-gray-400">{open ? '−' : '+'}</span>
+      </button>
+      {open && (
+        <div className="px-5 pb-5 space-y-4 text-sm text-gray-700 leading-relaxed border-t border-gray-100 pt-4">
+          <div>
+            <p className="font-semibold text-gray-900 mb-1">Games lock one at a time</p>
+            <p>
+              Each game locks the moment it kicks off — not the whole week at
+              once. You can keep changing your pick for any game that hasn't
+              started yet, even if other games that week have already
+              started or finished.
+            </p>
+          </div>
+          <div>
+            <p className="font-semibold text-gray-900 mb-1">Missed a game? You won't get zeroed out</p>
+            <p>
+              If you miss picking a whole batch of games (say, all the
+              Sunday 1pm games), you're not scored as 0 correct for every one
+              of them. Instead, you're given credit equal to whatever the
+              worst score was among everyone who <em>did</em> pick that
+              batch — so you're never worse off than the person who actually
+              played and had the worst day.
+            </p>
+          </div>
+          <div>
+            <p className="font-semibold text-gray-900 mb-1">Picks are hidden, then revealed</p>
+            <p>
+              Nobody can see your picks for a game until that game kicks off
+              — you can always see your own, just not anyone else's ahead of
+              time.
+            </p>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function Home() {
   const [week, setWeek] = useState<Week | null>(null)
   const [announcement, setAnnouncement] = useState<Announcement | null>(null)
@@ -56,6 +103,8 @@ export default function Home() {
           No announcement posted yet for this week.
         </div>
       )}
+
+      <HowItWorks />
     </div>
   )
 }
