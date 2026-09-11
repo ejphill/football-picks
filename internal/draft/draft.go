@@ -30,6 +30,24 @@ type DraftSections struct {
 	Outro        string `json:"outro"`
 }
 
+// AnnounceTarget computes the scheduler's automatic-announcement target:
+// 1pm ET on the Saturday of the given week, based on its earliest kickoff.
+func AnnounceTarget(ctx context.Context, pool *pgxpool.Pool, weekID int) (time.Time, error) {
+	games, err := queries.GetGamesByWeek(ctx, pool, weekID)
+	if err != nil {
+		return time.Time{}, err
+	}
+	if len(games) == 0 {
+		return time.Time{}, fmt.Errorf("no games for week %d", weekID)
+	}
+
+	est, _ := time.LoadLocation("America/New_York")
+	first := games[0].KickoffAt.In(est)
+	daysUntilSat := (int(time.Saturday) - int(first.Weekday()) + 7) % 7
+	sat := first.AddDate(0, 0, daysUntilSat)
+	return time.Date(sat.Year(), sat.Month(), sat.Day(), 13, 0, 0, 0, est), nil
+}
+
 // BuildDraft assembles a default DraftSections for the given week.
 func BuildDraft(ctx context.Context, pool *pgxpool.Pool, week *models.Week) (*DraftSections, error) {
 	d := &DraftSections{

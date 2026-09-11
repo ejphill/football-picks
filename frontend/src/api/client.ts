@@ -1,6 +1,7 @@
 import axios from 'axios'
 import { supabase } from './supabase'
 import type {
+  AnnounceStatus,
   Game,
   Pick,
   PickSubmitResult,
@@ -90,5 +91,11 @@ export const setGameIncluded = (gameId: string, includedInPicks: boolean) =>
 
 export const getDraftAnnouncement = (week: number, season: number) =>
   api.get<DraftSections>(`/admin/draft-announcement?week=${week}&season=${season}`)
+
+export const getAnnounceStatus = (week: number, season: number) =>
+  api.get<AnnounceStatus>(`/admin/announce-status?week=${week}&season=${season}`)
+
+export const setSkipAnnounce = (weekId: number, skip: boolean) =>
+  api.patch<Week>(`/admin/weeks/${weekId}/skip-announce`, { skip })
 
 export default api

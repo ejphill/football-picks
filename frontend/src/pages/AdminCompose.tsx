@@ -1,7 +1,25 @@
 import { useEffect, useMemo, useState } from 'react'
 import FormattedText from '../components/FormattedText'
-import { getActiveWeek, getDraftAnnouncement, postAnnouncement } from '../api/client'
-import type { Week } from '../types'
+import {
+  getActiveWeek,
+  getAnnounceStatus,
+  getDraftAnnouncement,
+  postAnnouncement,
+  setSkipAnnounce,
+} from '../api/client'
+import type { AnnounceStatus, Week } from '../types'
+
+function formatAutoSendAt(iso: string): string {
+  return new Date(iso).toLocaleString('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZoneName: 'short',
+    timeZone: 'America/New_York',
+  })
+}
 
 const ta = `w-full rounded-xl border border-gray-300 px-3 py-2 text-sm text-gray-900
             font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500
@@ -44,19 +62,26 @@ export default function AdminCompose() {
   const [submitted, setSubmitted] = useState(false)
   const [submitError, setSubmitError] = useState('')
 
+  const [announceStatus, setAnnounceStatus] = useState<AnnounceStatus | null>(null)
+  const [togglingSkip, setTogglingSkip] = useState(false)
+
   useEffect(() => {
     const load = async () => {
       try {
         const { data: w } = await getActiveWeek()
         setWeek(w)
 
-        const { data: draft } = await getDraftAnnouncement(w.week_number, w.season_year)
+        const [{ data: draft }, { data: status }] = await Promise.all([
+          getDraftAnnouncement(w.week_number, w.season_year),
+          getAnnounceStatus(w.week_number, w.season_year),
+        ])
         setIntro(draft.intro)
         setResultsBlock(draft.results)
         setRecordsBlock(draft.records)
         setPreGamesNote(draft.pre_games_note)
         setGamesBlock(draft.games)
         setOutro(draft.outro)
+        setAnnounceStatus(status)
       } catch {
         setLoadError('Failed to load data. Try refreshing.')
       } finally {
@@ -65,6 +90,17 @@ export default function AdminCompose() {
     }
     load()
   }, [])
+
+  const handleToggleSkip = async () => {
+    if (!week || !announceStatus) return
+    setTogglingSkip(true)
+    try {
+      await setSkipAnnounce(week.id, !announceStatus.skip_auto_announce)
+      setAnnounceStatus({ ...announceStatus, skip_auto_announce: !announceStatus.skip_auto_announce })
+    } finally {
+      setTogglingSkip(false)
+    }
+  }
 
   // Live-assembled preview — updates as any section changes.
   const assembled = useMemo(() => {
@@ -130,6 +166,35 @@ export default function AdminCompose() {
           Week {week?.week_number} · {week?.season_year} season
         </p>
       </div>
+
+      {announceStatus && (
+        <div className="mb-6 flex items-center justify-between gap-4 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
+          <p className="text-sm text-gray-700">
+            {announceStatus.has_announcement ? (
+              'An announcement has already been posted for this week — the automatic email won’t send.'
+            ) : announceStatus.skip_auto_announce ? (
+              'Automatic email is turned off for this week.'
+            ) : announceStatus.auto_send_at ? (
+              <>Auto-send scheduled for <span className="font-semibold">{formatAutoSendAt(announceStatus.auto_send_at)}</span> if nothing's posted before then.</>
+            ) : (
+              'No games synced yet — auto-send time unknown.'
+            )}
+          </p>
+          {!announceStatus.has_announcement && (
+            <button
+              onClick={handleToggleSkip}
+              disabled={togglingSkip}
+              className={`shrink-0 text-sm font-medium px-3 py-1.5 rounded-lg border transition-colors disabled:opacity-50 ${
+                announceStatus.skip_auto_announce
+                  ? 'border-indigo-300 text-indigo-700 hover:bg-indigo-50'
+                  : 'border-gray-300 text-gray-700 hover:bg-gray-100'
+              }`}
+            >
+              {togglingSkip ? 'Updating…' : announceStatus.skip_auto_announce ? 'Turn back on' : 'Cancel auto-send'}
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {/* Left: section editors */}

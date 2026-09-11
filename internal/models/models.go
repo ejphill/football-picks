@@ -26,11 +26,12 @@ type Season struct {
 
 // SeasonYear is 0 when Week is constructed without a season JOIN.
 type Week struct {
-	ID          int       `json:"id"`
-	SeasonID    int       `json:"season_id"`
-	SeasonYear  int       `json:"season_year"`
-	WeekNumber  int       `json:"week_number"`
-	PicksLockAt time.Time `json:"picks_lock_at"`
+	ID               int       `json:"id"`
+	SeasonID         int       `json:"season_id"`
+	SeasonYear       int       `json:"season_year"`
+	WeekNumber       int       `json:"week_number"`
+	PicksLockAt      time.Time `json:"picks_lock_at"`
+	SkipAutoAnnounce bool      `json:"skip_auto_announce"`
 }
 
 type Game struct {

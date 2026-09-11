@@ -105,6 +105,12 @@ export interface SeasonLeaderboardEntry {
   win_pct: number
 }
 
+export interface AnnounceStatus {
+  has_announcement: boolean
+  auto_send_at: string | null
+  skip_auto_announce: boolean
+}
+
 export interface DraftSections {
   intro: string
   results: string

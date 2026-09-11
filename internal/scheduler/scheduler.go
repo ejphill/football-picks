@@ -2,7 +2,6 @@ package scheduler
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"math/rand"
 	"time"
@@ -158,7 +157,7 @@ func (s *Scheduler) announceLoop(ctx context.Context) {
 			continue
 		}
 
-		target, err := s.saturdayTarget(ctx, week.ID)
+		target, err := draft.AnnounceTarget(ctx, s.pool, week.ID)
 		if err != nil {
 			slog.Error("scheduler: compute target", "week", week.WeekNumber, "err", err)
 			s.sleep(ctx, time.Hour)
@@ -185,22 +184,6 @@ func (s *Scheduler) announceLoop(ctx context.Context) {
 	}
 }
 
-func (s *Scheduler) saturdayTarget(ctx context.Context, weekID int) (time.Time, error) {
-	games, err := queries.GetGamesByWeek(ctx, s.pool, weekID)
-	if err != nil {
-		return time.Time{}, err
-	}
-	if len(games) == 0 {
-		return time.Time{}, fmt.Errorf("no games for week %d", weekID)
-	}
-
-	est, _ := time.LoadLocation("America/New_York")
-	first := games[0].KickoffAt.In(est)
-	daysUntilSat := (int(time.Saturday) - int(first.Weekday()) + 7) % 7
-	sat := first.AddDate(0, 0, daysUntilSat)
-	return time.Date(sat.Year(), sat.Month(), sat.Day(), 13, 0, 0, 0, est), nil
-}
-
 func (s *Scheduler) maybeAutoSend(ctx context.Context, weekID, weekNumber int) {
 	existing, err := queries.GetAnnouncementsByWeek(ctx, s.pool, weekID)
 	if err != nil {
@@ -215,6 +198,10 @@ func (s *Scheduler) maybeAutoSend(ctx context.Context, weekID, weekNumber int) {
 	week, err := queries.GetWeekByID(ctx, s.pool, weekID)
 	if err != nil {
 		slog.Error("scheduler: get week", "err", err)
+		return
+	}
+	if week.SkipAutoAnnounce {
+		slog.Info("scheduler: auto-announce skipped by admin", "week", weekNumber)
 		return
 	}
 

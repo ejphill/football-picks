@@ -229,6 +229,128 @@ func TestAdminDraftAnnouncement(t *testing.T) {
 	})
 }
 
+func TestAdminAnnounceStatus(t *testing.T) {
+	pool := testutil.NewTestDB(t)
+
+	t.Run("no announcement yet — reports pending auto-send target", func(t *testing.T) {
+		testutil.ResetDB(t, pool)
+		season := testutil.SeedSeason(t, pool, 2025, true)
+		week := testutil.SeedWeek(t, pool, season.ID, 1, time.Now().Add(time.Hour))
+		testutil.SeedGame(t, pool, week.ID, "espn-as-1", "KC", "DET", "scheduled", nil)
+
+		rr := doAdminAnnounceStatus(t, pool, 1, 2025)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("status: got %d — body: %s", rr.Code, rr.Body.String())
+		}
+		var status struct {
+			HasAnnouncement  bool   `json:"has_announcement"`
+			AutoSendAt       string `json:"auto_send_at"`
+			SkipAutoAnnounce bool   `json:"skip_auto_announce"`
+		}
+		if err := json.Unmarshal(rr.Body.Bytes(), &status); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if status.HasAnnouncement {
+			t.Error("has_announcement should be false — none posted yet")
+		}
+		if status.AutoSendAt == "" {
+			t.Error("auto_send_at should be populated when games exist")
+		}
+		if status.SkipAutoAnnounce {
+			t.Error("skip_auto_announce should default to false")
+		}
+	})
+
+	t.Run("announcement already posted", func(t *testing.T) {
+		testutil.ResetDB(t, pool)
+		season := testutil.SeedSeason(t, pool, 2025, true)
+		week := testutil.SeedWeek(t, pool, season.ID, 1, time.Now().Add(time.Hour))
+		testutil.SeedGame(t, pool, week.ID, "espn-as-2", "KC", "DET", "scheduled", nil)
+		author := testutil.SeedUser(t, pool, "uid-as-author", "Author", "author-as@test.com")
+		doAdminCreateAnnouncement(t, pool, author, 1, 2025, "Hello!")
+
+		rr := doAdminAnnounceStatus(t, pool, 1, 2025)
+		var status struct {
+			HasAnnouncement bool `json:"has_announcement"`
+		}
+		json.Unmarshal(rr.Body.Bytes(), &status)
+		if !status.HasAnnouncement {
+			t.Error("has_announcement should be true once one is posted")
+		}
+	})
+
+	t.Run("404 for unknown week", func(t *testing.T) {
+		testutil.ResetDB(t, pool)
+		rr := doAdminAnnounceStatus(t, pool, 99, 2025)
+		if rr.Code != http.StatusNotFound {
+			t.Errorf("status: got %d, want 404", rr.Code)
+		}
+	})
+}
+
+func TestAdminSetSkipAnnounce(t *testing.T) {
+	pool := testutil.NewTestDB(t)
+
+	t.Run("toggles skip on and reflects in announce-status", func(t *testing.T) {
+		testutil.ResetDB(t, pool)
+		season := testutil.SeedSeason(t, pool, 2025, true)
+		week := testutil.SeedWeek(t, pool, season.ID, 1, time.Now().Add(time.Hour))
+		testutil.SeedGame(t, pool, week.ID, "espn-ss-1", "KC", "DET", "scheduled", nil)
+
+		rr := doAdminSetSkipAnnounce(t, pool, week.ID, true)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("status: got %d — body: %s", rr.Code, rr.Body.String())
+		}
+		var updated models.Week
+		if err := json.Unmarshal(rr.Body.Bytes(), &updated); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if !updated.SkipAutoAnnounce {
+			t.Error("skip_auto_announce should be true after toggling on")
+		}
+
+		status := doAdminAnnounceStatus(t, pool, 1, 2025)
+		var body struct {
+			SkipAutoAnnounce bool `json:"skip_auto_announce"`
+		}
+		json.Unmarshal(status.Body.Bytes(), &body)
+		if !body.SkipAutoAnnounce {
+			t.Error("announce-status should reflect the skip flag")
+		}
+	})
+
+	t.Run("400 for missing skip field", func(t *testing.T) {
+		testutil.ResetDB(t, pool)
+		season := testutil.SeedSeason(t, pool, 2025, true)
+		week := testutil.SeedWeek(t, pool, season.ID, 1, time.Now().Add(time.Hour))
+
+		ah := handlers.NewAdminHandler(pool, nil, notify.NoopMailer{}, cache.NewLeaderboardCache(nil))
+		r := httptest.NewRequest(http.MethodPatch, fmt.Sprintf("/api/v1/admin/weeks/%d/skip-announce", week.ID), bytes.NewReader([]byte(`{}`)))
+		r.Header.Set("Content-Type", "application/json")
+		rr := httptest.NewRecorder()
+		router := chi.NewRouter()
+		router.Patch("/api/v1/admin/weeks/{weekId}/skip-announce", ah.SetSkipAnnounce)
+		router.ServeHTTP(rr, r)
+		if rr.Code != http.StatusBadRequest {
+			t.Errorf("status: got %d, want 400", rr.Code)
+		}
+	})
+
+	t.Run("400 for invalid week id", func(t *testing.T) {
+		testutil.ResetDB(t, pool)
+		ah := handlers.NewAdminHandler(pool, nil, notify.NoopMailer{}, cache.NewLeaderboardCache(nil))
+		r := httptest.NewRequest(http.MethodPatch, "/api/v1/admin/weeks/not-a-number/skip-announce", bytes.NewReader([]byte(`{"skip":true}`)))
+		r.Header.Set("Content-Type", "application/json")
+		rr := httptest.NewRecorder()
+		router := chi.NewRouter()
+		router.Patch("/api/v1/admin/weeks/{weekId}/skip-announce", ah.SetSkipAnnounce)
+		router.ServeHTTP(rr, r)
+		if rr.Code != http.StatusBadRequest {
+			t.Errorf("status: got %d, want 400", rr.Code)
+		}
+	})
+}
+
 func TestAdminSyncGames(t *testing.T) {
 	pool := testutil.NewTestDB(t)
 
@@ -340,6 +462,28 @@ func doAdminDraftAnnouncementRaw(t *testing.T, pool *pgxpool.Pool, query string)
 	r := httptest.NewRequest(http.MethodGet, "/api/v1/admin/draft-announcement"+query, nil)
 	rr := httptest.NewRecorder()
 	ah.DraftAnnouncement(rr, r)
+	return rr
+}
+
+func doAdminAnnounceStatus(t *testing.T, pool *pgxpool.Pool, week, season int) *httptest.ResponseRecorder {
+	t.Helper()
+	ah := handlers.NewAdminHandler(pool, nil, notify.NoopMailer{}, cache.NewLeaderboardCache(nil))
+	r := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/admin/announce-status?week=%d&season=%d", week, season), nil)
+	rr := httptest.NewRecorder()
+	ah.AnnounceStatus(rr, r)
+	return rr
+}
+
+func doAdminSetSkipAnnounce(t *testing.T, pool *pgxpool.Pool, weekID int, skip bool) *httptest.ResponseRecorder {
+	t.Helper()
+	ah := handlers.NewAdminHandler(pool, nil, notify.NoopMailer{}, cache.NewLeaderboardCache(nil))
+	body, _ := json.Marshal(map[string]bool{"skip": skip})
+	r := httptest.NewRequest(http.MethodPatch, fmt.Sprintf("/api/v1/admin/weeks/%d/skip-announce", weekID), bytes.NewReader(body))
+	r.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	router := chi.NewRouter()
+	router.Patch("/api/v1/admin/weeks/{weekId}/skip-announce", ah.SetSkipAnnounce)
+	router.ServeHTTP(rr, r)
 	return rr
 }
 

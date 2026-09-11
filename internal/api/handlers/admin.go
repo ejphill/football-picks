@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/evan/football-picks/internal/api/middleware"
 	"github.com/evan/football-picks/internal/cache"
@@ -128,6 +129,62 @@ func (h *AdminHandler) DraftAnnouncement(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	respondJSON(w, http.StatusOK, d)
+}
+
+// GET /api/v1/admin/announce-status?week=1&season=2025
+// Reports whether the week's automatic Saturday-1pm-ET announcement is still
+// pending, already superseded by a posted announcement, or skipped by admin.
+func (h *AdminHandler) AnnounceStatus(w http.ResponseWriter, r *http.Request) {
+	week, ok := weekFromRequest(w, r, h.pool)
+	if !ok {
+		return
+	}
+
+	existing, err := queries.GetAnnouncementsByWeek(r.Context(), h.pool, week.ID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	var autoSendAt *time.Time
+	if target, err := draft.AnnounceTarget(r.Context(), h.pool, week.ID); err == nil {
+		autoSendAt = &target
+	}
+
+	respondJSON(w, http.StatusOK, map[string]any{
+		"has_announcement":   len(existing) > 0,
+		"auto_send_at":       autoSendAt,
+		"skip_auto_announce": week.SkipAutoAnnounce,
+	})
+}
+
+// PATCH /api/v1/admin/weeks/{weekId}/skip-announce
+// Body: { "skip": true | false }
+func (h *AdminHandler) SetSkipAnnounce(w http.ResponseWriter, r *http.Request) {
+	weekID, err := strconv.Atoi(chi.URLParam(r, "weekId"))
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid week id")
+		return
+	}
+
+	var body struct {
+		Skip *bool `json:"skip"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if body.Skip == nil {
+		respondError(w, http.StatusBadRequest, "skip is required")
+		return
+	}
+
+	week, err := queries.SetWeekSkipAnnounce(r.Context(), h.pool, weekID, *body.Skip)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "could not update week")
+		return
+	}
+	respondJSON(w, http.StatusOK, week)
 }
 
 // GET /api/v1/admin/games?week=1&season=2025

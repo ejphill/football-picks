@@ -105,6 +105,8 @@ func NewRouter(pool *pgxpool.Pool, jwks keyfunc.Keyfunc, corsOrigin string, lbCa
 			r.Post("/admin/announcements", adminH.CreateAnnouncement)
 			r.Get("/admin/games", adminH.ListGames)
 			r.Patch("/admin/games/{gameId}", adminH.UpdateGame)
+			r.Get("/admin/announce-status", adminH.AnnounceStatus)
+			r.Patch("/admin/weeks/{weekId}/skip-announce", adminH.SetSkipAnnounce)
 		})
 	})
 

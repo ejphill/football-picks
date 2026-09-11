@@ -156,11 +156,11 @@ func ScorePicks(ctx context.Context, pool *pgxpool.Pool) error {
 func GetWeekByID(ctx context.Context, pool *pgxpool.Pool, id int) (*models.Week, error) {
 	w := &models.Week{}
 	err := pool.QueryRow(ctx, `
-		SELECT w.id, w.season_id, s.year, w.week_number, w.picks_lock_at
+		SELECT w.id, w.season_id, s.year, w.week_number, w.picks_lock_at, w.skip_auto_announce
 		FROM weeks w
 		JOIN seasons s ON w.season_id = s.id
 		WHERE w.id = $1
-	`, id).Scan(&w.ID, &w.SeasonID, &w.SeasonYear, &w.WeekNumber, &w.PicksLockAt)
+	`, id).Scan(&w.ID, &w.SeasonID, &w.SeasonYear, &w.WeekNumber, &w.PicksLockAt, &w.SkipAutoAnnounce)
 	if err != nil {
 		return nil, fmt.Errorf("get week by id: %w", err)
 	}
@@ -170,15 +170,27 @@ func GetWeekByID(ctx context.Context, pool *pgxpool.Pool, id int) (*models.Week,
 func GetWeekByNumberAndSeason(ctx context.Context, pool *pgxpool.Pool, weekNumber, seasonYear int) (*models.Week, error) {
 	w := &models.Week{}
 	err := pool.QueryRow(ctx, `
-		SELECT w.id, w.season_id, s.year, w.week_number, w.picks_lock_at
+		SELECT w.id, w.season_id, s.year, w.week_number, w.picks_lock_at, w.skip_auto_announce
 		FROM weeks w
 		JOIN seasons s ON w.season_id = s.id
 		WHERE w.week_number = $1 AND s.year = $2
-	`, weekNumber, seasonYear).Scan(&w.ID, &w.SeasonID, &w.SeasonYear, &w.WeekNumber, &w.PicksLockAt)
+	`, weekNumber, seasonYear).Scan(&w.ID, &w.SeasonID, &w.SeasonYear, &w.WeekNumber, &w.PicksLockAt, &w.SkipAutoAnnounce)
 	if err != nil {
 		return nil, fmt.Errorf("get week by number and season: %w", err)
 	}
 	return w, nil
+}
+
+// SetWeekSkipAnnounce toggles whether the scheduler's automatic Saturday
+// 1pm ET announcement should be skipped for this week.
+func SetWeekSkipAnnounce(ctx context.Context, pool *pgxpool.Pool, weekID int, skip bool) (*models.Week, error) {
+	var id int
+	if err := pool.QueryRow(ctx, `
+		UPDATE weeks SET skip_auto_announce = $2 WHERE id = $1 RETURNING id
+	`, weekID, skip).Scan(&id); err != nil {
+		return nil, fmt.Errorf("set week skip announce: %w", err)
+	}
+	return GetWeekByID(ctx, pool, id)
 }
 
 // ListSeasons returns all seasons, most recent year first.
