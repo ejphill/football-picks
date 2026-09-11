@@ -19,6 +19,8 @@ type WeeklyScoreRow struct {
 
 // GetWeeklyLeaderboardScores returns per-user floor-scored totals.
 // Floor scoring credits missed games with the minimum correct count any picker got in that window.
+// A pick on a game that hasn't been scored yet (is_correct still NULL) doesn't
+// count toward total — it's neither a win nor a loss until the game is final.
 func GetWeeklyLeaderboardScores(ctx context.Context, pool *pgxpool.Pool, weekID int) ([]WeeklyScoreRow, error) {
 	rows, err := pool.Query(ctx, `
 		WITH included_games AS (
@@ -82,8 +84,8 @@ func GetWeeklyLeaderboardScores(ctx context.Context, pool *pgxpool.Pool, weekID 
 		)
 		SELECT u.id,
 		       u.display_name,
-		       COUNT(*) FILTER (WHERE p.is_correct = TRUE) + COALESCE(fc.credit_correct, 0) AS correct,
-		       COUNT(*)                                     + COALESCE(fc.credit_total,   0) AS total
+		       COUNT(*) FILTER (WHERE p.is_correct = TRUE)      + COALESCE(fc.credit_correct, 0) AS correct,
+		       COUNT(*) FILTER (WHERE p.is_correct IS NOT NULL) + COALESCE(fc.credit_total,   0) AS total
 		FROM   picks p
 		JOIN   included_games ig ON ig.id = p.game_id
 		JOIN   users u           ON u.id  = p.user_id
@@ -108,12 +110,14 @@ func GetWeeklyLeaderboardScores(ctx context.Context, pool *pgxpool.Pool, weekID 
 }
 
 // GetSeasonStandings ranks users by correct DESC, total ASC (fewer picks wins tiebreaker).
-// Only included games count.
+// Only included games count, and only picks on already-scored (is_correct
+// IS NOT NULL) games — an unscored pick shouldn't count as a loss just
+// because its game hasn't finished yet.
 func GetSeasonStandings(ctx context.Context, pool *pgxpool.Pool, seasonYear int) ([]models.SeasonLeaderboardEntry, error) {
 	rows, err := pool.Query(ctx, `
 		SELECT u.id, u.display_name,
-		       COUNT(*) FILTER (WHERE p.is_correct = TRUE)  AS correct,
-		       COUNT(*)                                       AS total
+		       COUNT(*) FILTER (WHERE p.is_correct = TRUE)     AS correct,
+		       COUNT(*) FILTER (WHERE p.is_correct IS NOT NULL) AS total
 		FROM users u
 		JOIN picks p  ON p.user_id = u.id
 		JOIN games g  ON p.game_id = g.id

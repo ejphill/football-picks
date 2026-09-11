@@ -104,6 +104,46 @@ func TestWeeklyLeaderboardFloorScoring(t *testing.T) {
 	}
 }
 
+// TestWeeklyLeaderboard_UnscoredPicksDontCountAsLosses verifies that a pick
+// on a game which hasn't been scored yet doesn't count toward total in the
+// weekly view either — mirrors the same fix in GetSeasonStandings.
+func TestWeeklyLeaderboard_UnscoredPicksDontCountAsLosses(t *testing.T) {
+	pool := testutil.NewTestDB(t)
+	testutil.ResetDB(t, pool)
+
+	season := testutil.SeedSeason(t, pool, 2025, true)
+	week := testutil.SeedWeek(t, pool, season.ID, 1, time.Now().Add(time.Hour))
+	user := testutil.SeedUser(t, pool, "uid-wk-unscored", "Dana", "dana@test.com")
+
+	winner := "home"
+	finalGame := testutil.SeedGameAt(t, pool, week.ID, "espn-wk-final", "KC", "DET", "final", &winner, time.Now().Add(-3*time.Hour))
+	inProgressGame := testutil.SeedGameAt(t, pool, week.ID, "espn-wk-live", "SF", "SEA", "in_progress", nil, time.Now().Add(-30*time.Minute))
+
+	testutil.SeedPick(t, pool, user.ID, finalGame.ID, "home")
+	testutil.SeedPick(t, pool, user.ID, inProgressGame.ID, "home")
+
+	if err := queries.ScorePicks(context.Background(), pool); err != nil {
+		t.Fatalf("score picks: %v", err)
+	}
+
+	scores, err := queries.GetWeeklyLeaderboardScores(context.Background(), pool, week.ID)
+	if err != nil {
+		t.Fatalf("GetWeeklyLeaderboardScores: %v", err)
+	}
+	if len(scores) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(scores))
+	}
+
+	// The in-progress game's pick isn't scored yet, so it must not count —
+	// only the final, correct pick should show up.
+	if scores[0].Correct != 1 {
+		t.Errorf("Correct: got %d, want 1", scores[0].Correct)
+	}
+	if scores[0].Total != 1 {
+		t.Errorf("Total: got %d, want 1 (unscored pick should not count)", scores[0].Total)
+	}
+}
+
 func TestSeasonLeaderboardOrder(t *testing.T) {
 	pool := testutil.NewTestDB(t)
 	testutil.ResetDB(t, pool)
@@ -167,5 +207,46 @@ func TestSeasonLeaderboardOrder(t *testing.T) {
 	}
 	if standings[1].Total != 10 {
 		t.Errorf("Alice total: got %d, want 10", standings[1].Total)
+	}
+}
+
+// TestSeasonStandings_UnscoredPicksDontCountAsLosses verifies that a pick on
+// a game which hasn't been scored yet (is_correct still NULL) doesn't count
+// toward total — it should be neither a win nor a loss until the game is
+// actually final and ScorePicks has run.
+func TestSeasonStandings_UnscoredPicksDontCountAsLosses(t *testing.T) {
+	pool := testutil.NewTestDB(t)
+	testutil.ResetDB(t, pool)
+
+	season := testutil.SeedSeason(t, pool, 2025, true)
+	week := testutil.SeedWeek(t, pool, season.ID, 1, time.Now().Add(time.Hour))
+	user := testutil.SeedUser(t, pool, "uid-lb-unscored", "Carol", "carol@test.com")
+
+	winner := "home"
+	finalGame := testutil.SeedGame(t, pool, week.ID, "espn-lb-final", "KC", "DET", "final", &winner)
+	scheduledGame := testutil.SeedGame(t, pool, week.ID, "espn-lb-scheduled", "NE", "MIA", "scheduled", nil)
+
+	testutil.SeedPick(t, pool, user.ID, finalGame.ID, "home")
+	testutil.SeedPick(t, pool, user.ID, scheduledGame.ID, "home")
+
+	if err := queries.ScorePicks(context.Background(), pool); err != nil {
+		t.Fatalf("score picks: %v", err)
+	}
+
+	standings, err := queries.GetSeasonStandings(context.Background(), pool, 2025)
+	if err != nil {
+		t.Fatalf("get standings: %v", err)
+	}
+	if len(standings) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(standings))
+	}
+
+	// Only the scored, correct pick should count — the unscored pick on
+	// scheduledGame must not inflate Total (which would show as a loss).
+	if standings[0].Correct != 1 {
+		t.Errorf("Correct: got %d, want 1", standings[0].Correct)
+	}
+	if standings[0].Total != 1 {
+		t.Errorf("Total: got %d, want 1 (unscored pick should not count)", standings[0].Total)
 	}
 }
