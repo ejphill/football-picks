@@ -1,0 +1,45 @@
+name: Backup Database
+
+# Weekly full pg_dump of the Supabase database, pushed to a separate private
+# backup repo. Supabase's free tier has no automatic backups at all, so this
+# is the only safety net if the database is ever lost or corrupted.
+#
+# Requires two repo secrets (Settings -> Secrets and variables -> Actions):
+#   SUPABASE_DB_URL   - the direct Postgres connection string from
+#                        Supabase (Settings -> Database), not the pooler URL
+#   BACKUP_REPO_TOKEN - a GitHub personal access token with push access to
+#                        the backup repo (the default Actions token can't
+#                        push to a repo other than the one it runs in)
+
+on:
+  schedule:
+    # Tuesday 10:00 UTC (~5-6am ET) - after Monday Night Football wraps,
+    # before anyone's usually awake to use the app.
+    - cron: '0 10 * * 2'
+  workflow_dispatch: {} # allows manually triggering a backup from the Actions tab
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Dump database
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: pg_dump "$SUPABASE_DB_URL" --no-owner --no-privileges | gzip > backup.sql.gz
+
+      - name: Push backup to private repo
+        env:
+          BACKUP_REPO_TOKEN: ${{ secrets.BACKUP_REPO_TOKEN }}
+        run: |
+          git clone "https://x-access-token:${BACKUP_REPO_TOKEN}@github.com/ejphill/football-picks-backups.git" backups
+          DATE=$(date +%F)
+          cp backup.sql.gz "backups/backup-${DATE}.sql.gz"
+          cd backups
+          git config user.name "football-picks-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add "backup-${DATE}.sql.gz"
+          git commit -m "Backup ${DATE}" || echo "nothing changed, skipping commit"
+          git push
