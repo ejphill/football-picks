@@ -77,8 +77,12 @@ export const getAnnouncements = (season: number) =>
 
 export const getAnnouncement = (id: string) => api.get<Announcement>(`/announcements/${id}`)
 
-export const postAnnouncement = (weekId: number, intro: string) =>
-  api.post<Announcement>('/admin/announcements', { week_id: weekId, intro })
+export const postAnnouncement = (weekNumber: number, seasonYear: number, intro: string) =>
+  api.post<Announcement>('/admin/announcements', {
+    week_number: weekNumber,
+    season_year: seasonYear,
+    intro,
+  })
 
 export const syncGames = (week: number, season: number, seasonType = 2) =>
   api.post(`/admin/sync-games?week=${week}&season=${season}&seasontype=${seasonType}`)

@@ -115,7 +115,7 @@ export default function AdminCompose() {
     setSubmitting(true)
     setSubmitError('')
     try {
-      await postAnnouncement(week.id, assembled.trim())
+      await postAnnouncement(week.week_number, week.season_year, assembled.trim())
       setSubmitted(true)
     } catch {
       setSubmitError('Failed to post. Try again.')
