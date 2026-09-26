@@ -14,7 +14,7 @@ export default defineConfig({
         name: 'Football Picks',
         short_name: 'Picks',
         description: "Family NFL picks league — weekly picks, floor-scored leaderboard.",
-        theme_color: '#4f46e5',
+        theme_color: '#0d2b21',
         background_color: '#f9fafb',
         display: 'standalone',
         start_url: '/',
