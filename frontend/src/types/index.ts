@@ -62,6 +62,9 @@ export interface PickView {
   game_id: string
   picked_team: 'home' | 'away' | ''
   is_correct: boolean | null
+  // true for a synthetic entry (floor-credited missed game) — no real pick
+  // was made, picked_team is always "" for these.
+  credited?: boolean
 }
 
 export interface WeeklyLeaderboardEntry {

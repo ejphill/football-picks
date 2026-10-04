@@ -69,7 +69,7 @@ func TestWeeklyLeaderboardFloorScoring(t *testing.T) {
 		t.Fatalf("ScorePicks: %v", err)
 	}
 
-	scores, err := queries.GetWeeklyLeaderboardScores(context.Background(), pool, week.ID)
+	scores, err := queries.GetWeeklyLeaderboardScores(context.Background(), pool, 2025, week.ID)
 	if err != nil {
 		t.Fatalf("GetWeeklyLeaderboardScores: %v", err)
 	}
@@ -126,7 +126,7 @@ func TestWeeklyLeaderboard_UnscoredPicksDontCountAsLosses(t *testing.T) {
 		t.Fatalf("score picks: %v", err)
 	}
 
-	scores, err := queries.GetWeeklyLeaderboardScores(context.Background(), pool, week.ID)
+	scores, err := queries.GetWeeklyLeaderboardScores(context.Background(), pool, 2025, week.ID)
 	if err != nil {
 		t.Fatalf("GetWeeklyLeaderboardScores: %v", err)
 	}
@@ -141,6 +141,117 @@ func TestWeeklyLeaderboard_UnscoredPicksDontCountAsLosses(t *testing.T) {
 	}
 	if scores[0].Total != 1 {
 		t.Errorf("Total: got %d, want 1 (unscored pick should not count)", scores[0].Total)
+	}
+}
+
+// TestFloorScoring_FullyMissedWeek verifies that a user who misses an
+// entire week (zero picks, not just a partial window) still gets a
+// floor-credited row — as long as they've picked something elsewhere this
+// season, distinguishing "an active player had a bad week" from "someone
+// who's never played at all."
+func TestFloorScoring_FullyMissedWeek(t *testing.T) {
+	pool := testutil.NewTestDB(t)
+	testutil.ResetDB(t, pool)
+
+	season := testutil.SeedSeason(t, pool, 2025, true)
+	week1 := testutil.SeedWeek(t, pool, season.ID, 1, time.Now().Add(-48*time.Hour))
+	week2 := testutil.SeedWeek(t, pool, season.ID, 2, time.Now().Add(-time.Hour))
+
+	alice := testutil.SeedUser(t, pool, "uid-fw-alice", "Alice", "alice@fw.com")
+	bob := testutil.SeedUser(t, pool, "uid-fw-bob", "Bob", "bob@fw.com")
+
+	// Week 1: both participate, so Bob is a season participant.
+	winner := "home"
+	w1g := testutil.SeedGameAt(t, pool, week1.ID, "espn-fw-w1", "KC", "DET", "final", &winner, time.Now().Add(-47*time.Hour))
+	testutil.SeedPick(t, pool, alice.ID, w1g.ID, "home")
+	testutil.SeedPick(t, pool, bob.ID, w1g.ID, "home")
+
+	// Week 2: Alice picks both games (1 right, 1 wrong). Bob misses the
+	// entire week — zero picks on anything.
+	w2 := time.Now().Add(-2 * time.Hour).Truncate(time.Hour)
+	g1 := testutil.SeedGameAt(t, pool, week2.ID, "espn-fw-w2a", "NE", "MIA", "final", &winner, w2)
+	g2 := testutil.SeedGameAt(t, pool, week2.ID, "espn-fw-w2b", "SF", "SEA", "final", &winner, w2)
+	testutil.SeedPick(t, pool, alice.ID, g1.ID, "home")  // correct
+	testutil.SeedPick(t, pool, alice.ID, g2.ID, "away")  // wrong
+
+	if err := queries.ScorePicks(context.Background(), pool); err != nil {
+		t.Fatalf("score picks: %v", err)
+	}
+
+	scores, err := queries.GetWeeklyLeaderboardScores(context.Background(), pool, 2025, week2.ID)
+	if err != nil {
+		t.Fatalf("GetWeeklyLeaderboardScores: %v", err)
+	}
+	if len(scores) != 2 {
+		t.Fatalf("expected 2 entries (Bob should still appear despite 0 picks), got %d", len(scores))
+	}
+
+	byName := make(map[string]queries.WeeklyScoreRow, 2)
+	for _, s := range scores {
+		byName[s.DisplayName] = s
+	}
+
+	// Floor for week 2's window = MIN(correct) among actual submitters = Alice's 1.
+	if byName["Bob"].Correct != 1 {
+		t.Errorf("Bob correct: got %d, want 1 (floor credit for fully-missed week)", byName["Bob"].Correct)
+	}
+	if byName["Bob"].Total != 2 {
+		t.Errorf("Bob total: got %d, want 2 (both games in the missed window credited)", byName["Bob"].Total)
+	}
+}
+
+// TestGetWindowCredits verifies the per-window credit breakdown used to
+// assign floor credit to specific game cells in the UI.
+func TestGetWindowCredits(t *testing.T) {
+	pool := testutil.NewTestDB(t)
+	testutil.ResetDB(t, pool)
+
+	season := testutil.SeedSeason(t, pool, 2025, true)
+	week := testutil.SeedWeek(t, pool, season.ID, 1, time.Now().Add(-time.Hour))
+
+	alice := testutil.SeedUser(t, pool, "uid-wc-alice", "Alice", "alice@wc.com")
+	bob := testutil.SeedUser(t, pool, "uid-wc-bob", "Bob", "bob@wc.com")
+
+	winner := "home"
+	wnd := time.Now().Add(-2 * time.Hour).Truncate(time.Hour)
+	g1 := testutil.SeedGameAt(t, pool, week.ID, "espn-wc-1", "KC", "DET", "final", &winner, wnd)
+	g2 := testutil.SeedGameAt(t, pool, week.ID, "espn-wc-2", "NE", "MIA", "final", &winner, wnd)
+	g3 := testutil.SeedGameAt(t, pool, week.ID, "espn-wc-3", "SF", "SEA", "final", &winner, wnd)
+
+	// Alice picks all 3, gets 2 right (floor = 2).
+	testutil.SeedPick(t, pool, alice.ID, g1.ID, "home") // correct
+	testutil.SeedPick(t, pool, alice.ID, g2.ID, "home") // correct
+	testutil.SeedPick(t, pool, alice.ID, g3.ID, "away") // wrong
+
+	// Bob skips this window entirely, but needs a pick somewhere this season
+	// to be eligible for floor credit at all — a future, not-yet-started
+	// game does that without touching the window being tested.
+	future := testutil.SeedGameAt(t, pool, week.ID, "espn-wc-4", "LAC", "ARI", "scheduled", nil, time.Now().Add(2*time.Hour))
+	testutil.SeedPick(t, pool, bob.ID, future.ID, "home")
+
+	if err := queries.ScorePicks(context.Background(), pool); err != nil {
+		t.Fatalf("score picks: %v", err)
+	}
+
+	credits, err := queries.GetWindowCredits(context.Background(), pool, 2025, week.ID)
+	if err != nil {
+		t.Fatalf("GetWindowCredits: %v", err)
+	}
+
+	var bobCredit *queries.WindowCreditRow
+	for i := range credits {
+		if credits[i].UserID == bob.ID {
+			bobCredit = &credits[i]
+		}
+	}
+	if bobCredit == nil {
+		t.Fatalf("expected a credit row for Bob, got none (rows: %+v)", credits)
+	}
+	if bobCredit.CreditCorrect != 2 {
+		t.Errorf("Bob credit_correct: got %d, want 2 (floor)", bobCredit.CreditCorrect)
+	}
+	if bobCredit.CreditTotal != 3 {
+		t.Errorf("Bob credit_total: got %d, want 3 (all 3 games in the window)", bobCredit.CreditTotal)
 	}
 }
 

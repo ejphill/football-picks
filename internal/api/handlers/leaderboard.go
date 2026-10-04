@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"sort"
 	"strconv"
 	"time"
 
@@ -78,7 +79,7 @@ func (h *LeaderboardHandler) Weekly(w http.ResponseWriter, r *http.Request) {
 	// served from cache when available; full list cached, pagination in-memory
 	scores, ok := h.lb.GetWeeklyScores(week.ID)
 	if !ok {
-		scores, err = queries.GetWeeklyLeaderboardScores(r.Context(), h.pool, week.ID)
+		scores, err = queries.GetWeeklyLeaderboardScores(r.Context(), h.pool, week.SeasonYear, week.ID)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "internal error")
 			return
@@ -113,7 +114,13 @@ func (h *LeaderboardHandler) Weekly(w http.ResponseWriter, r *http.Request) {
 	// frontend's existing "no entry for this game" rendering just works.
 	type pickList = []models.PickView
 	userPicks := map[uuid.UUID]pickList{}
+	userActualPicks := map[uuid.UUID]map[uuid.UUID]bool{} // userID -> set of gameIDs they actually picked
 	for _, row := range pagePicks {
+		if userActualPicks[row.UserID] == nil {
+			userActualPicks[row.UserID] = map[uuid.UUID]bool{}
+		}
+		userActualPicks[row.UserID][row.GameID] = true
+
 		if row.UserID != currentUser.ID && !gameStarted[row.GameID] {
 			continue
 		}
@@ -122,6 +129,33 @@ func (h *LeaderboardHandler) Weekly(w http.ResponseWriter, r *http.Request) {
 			PickedTeam: row.PickedTeam,
 			IsCorrect:  row.IsCorrect,
 		})
+	}
+
+	// Assign floor credit to specific missed-game cells. Credit is only ever
+	// computed for past windows, so every game here has already kicked off —
+	// no visibility gating needed, these are safe to show to any viewer.
+	windowCredits, err := queries.GetWindowCredits(r.Context(), h.pool, week.SeasonYear, week.ID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	for _, wc := range windowCredits {
+		var missed []models.Game
+		for _, g := range games {
+			if g.KickoffAt.UTC().Truncate(time.Hour).Equal(wc.KickoffWindow.UTC()) && !userActualPicks[wc.UserID][g.ID] {
+				missed = append(missed, g)
+			}
+		}
+		sort.Slice(missed, func(i, j int) bool { return missed[i].KickoffAt.Before(missed[j].KickoffAt) })
+
+		for i, g := range missed {
+			correct := i < wc.CreditCorrect
+			userPicks[wc.UserID] = append(userPicks[wc.UserID], models.PickView{
+				GameID:    g.ID,
+				IsCorrect: &correct,
+				Credited:  true,
+			})
+		}
 	}
 
 	entries := make([]models.WeeklyLeaderboardEntry, 0, len(pageScores))

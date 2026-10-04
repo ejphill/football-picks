@@ -144,13 +144,14 @@ function WeeklyView({
   )
 
   // Build a lookup: userId -> gameId -> PickView
-  const pickMap: Record<string, Record<string, { picked_team: string; is_correct: boolean | null }>> = {}
+  const pickMap: Record<string, Record<string, { picked_team: string; is_correct: boolean | null; credited?: boolean }>> = {}
   for (const entry of sorted) {
     pickMap[entry.user_id] = {}
     for (const p of entry.picks) {
-      pickMap[entry.user_id][p.game_id] = { picked_team: p.picked_team, is_correct: p.is_correct }
+      pickMap[entry.user_id][p.game_id] = { picked_team: p.picked_team, is_correct: p.is_correct, credited: p.credited }
     }
   }
+  const anyCredited = sorted.some((e) => e.picks.some((p) => p.credited))
 
   return (
     <div className="space-y-3">
@@ -197,6 +198,18 @@ function WeeklyView({
                     )
                   }
 
+                  if (pick.credited) {
+                    const cellColor =
+                      pick.is_correct === true
+                        ? 'bg-green-50 text-green-600'
+                        : 'bg-red-50 text-red-500'
+                    return (
+                      <td key={entry.user_id} className={`px-3 py-2 text-center font-medium ${cellColor}`}>
+                        *
+                      </td>
+                    )
+                  }
+
                   const abbr =
                     pick.picked_team === 'home'
                       ? game.home_team
@@ -232,6 +245,17 @@ function WeeklyView({
           </tfoot>
         </table>
       </div>
+
+      {anyCredited && (
+        <p className="text-xs text-gray-400">
+          <span className="inline-block px-1.5 bg-green-50 text-green-600 rounded font-medium">*</span>{' '}
+          /{' '}
+          <span className="inline-block px-1.5 bg-red-50 text-red-500 rounded font-medium">*</span>{' '}
+          = credited, not an actual pick — this player missed a whole kickoff window, so they're
+          scored at the same level as the worst actual picker that window. Which specific games
+          show green vs red is illustrative only; the week's total credit is what's real.
+        </p>
+      )}
     </div>
   )
 }

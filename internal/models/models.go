@@ -95,8 +95,12 @@ type WeeklyLeaderboardEntry struct {
 // PickView is a pick as seen on the leaderboard — picked_team is "" before lock time.
 type PickView struct {
 	GameID     uuid.UUID `json:"game_id"`
-	PickedTeam string    `json:"picked_team"` // "" when hidden
+	PickedTeam string    `json:"picked_team"` // "" when hidden, also "" for Credited entries (no real pick was made)
 	IsCorrect  *bool     `json:"is_correct,omitempty"`
+	// Credited marks a synthetic entry for a game the user never picked,
+	// shown as credited correct/incorrect per floor scoring — see
+	// queries.GetWindowCredits. Never set for a real submitted pick.
+	Credited bool `json:"credited,omitempty"`
 }
 
 type SeasonLeaderboardEntry struct {
