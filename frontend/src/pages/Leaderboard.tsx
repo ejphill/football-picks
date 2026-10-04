@@ -238,11 +238,11 @@ function WeeklyView({
                   if (pick.credited) {
                     const cellColor =
                       pick.is_correct === true
-                        ? 'bg-green-50 text-green-500 border-2 border-dashed border-green-200'
-                        : 'bg-red-50 text-red-400 border-2 border-dashed border-red-200'
+                        ? 'bg-green-50 text-green-500'
+                        : 'bg-red-50 text-red-400'
                     return (
-                      <td key={entry.user_id} className="p-1 text-center">
-                        <div className={`rounded py-1.5 font-bold text-base ${cellColor}`}>*</div>
+                      <td key={entry.user_id} className={`px-3 py-2 text-center font-medium ${cellColor}`}>
+                        *
                       </td>
                     )
                   }
