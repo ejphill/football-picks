@@ -153,6 +153,30 @@ function WeeklyView({
   }
   const anyCredited = sorted.some((e) => e.picks.some((p) => p.credited))
 
+  // Kickoff window = games grouped by truncated kickoff hour, same grouping
+  // the backend uses for floor scoring (an early international game gets
+  // its own window, distinct from the main Sunday slate).
+  const windowKey = (kickoffAt: string): number => {
+    const d = new Date(kickoffAt)
+    d.setMinutes(0, 0, 0)
+    return d.getTime()
+  }
+
+  // Distinct windows represented among a player's credited games — so the
+  // header note can say "missed 2 windows" rather than always "a window"
+  // regardless of how many were actually missed.
+  const gameById = new Map(games.map((g) => [g.id, g]))
+  const missedWindowCount = (entry: WeeklyLeaderboardEntry): number => {
+    const windows = new Set<number>()
+    for (const p of entry.picks) {
+      if (!p.credited) continue
+      const game = gameById.get(p.game_id)
+      if (!game) continue
+      windows.add(windowKey(game.kickoff_at))
+    }
+    return windows.size
+  }
+
   return (
     <div className="space-y-3">
       <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
@@ -166,24 +190,37 @@ function WeeklyView({
               <th className="text-left px-3 py-2 font-semibold text-gray-600 whitespace-nowrap sticky left-0 bg-gray-50 z-10">
                 Game
               </th>
-              {sorted.map((e) => (
-                <th
-                  key={e.user_id}
-                  className={`px-3 py-2 font-semibold text-center whitespace-nowrap ${
-                    e.user_id === currentUserId ? 'text-indigo-700' : 'text-gray-600'
-                  }`}
-                >
-                  {e.display_name}
-                  {e.user_id === currentUserId && (
-                    <span className="block text-xs font-normal text-indigo-400">(you)</span>
-                  )}
-                </th>
-              ))}
+              {sorted.map((e) => {
+                const windowCount = missedWindowCount(e)
+                return (
+                  <th
+                    key={e.user_id}
+                    className={`px-3 py-2 font-semibold text-center whitespace-nowrap ${
+                      e.user_id === currentUserId ? 'text-indigo-700' : 'text-gray-600'
+                    }`}
+                  >
+                    {e.display_name}
+                    {e.user_id === currentUserId && (
+                      <span className="block text-xs font-normal text-indigo-400">(you)</span>
+                    )}
+                    {windowCount > 0 && (
+                      <span className="block text-[10px] font-normal normal-case text-amber-600 leading-tight">
+                        missed {windowCount === 1 ? 'a window' : `${windowCount} windows`} —
+                        <br />
+                        * games credited
+                      </span>
+                    )}
+                  </th>
+                )
+              })}
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {games.map((game) => (
-              <tr key={game.id} className="hover:bg-gray-50">
+            {games.map((game, i) => {
+              const newWindow = i > 0 && windowKey(game.kickoff_at) !== windowKey(games[i - 1].kickoff_at)
+
+              return (
+              <tr key={game.id} className={`hover:bg-gray-50 ${newWindow ? 'border-t-2 border-t-gray-300' : ''}`}>
                 <td className="px-3 py-2 whitespace-nowrap text-gray-700 sticky left-0 bg-white z-10 font-medium">
                   {game.away_team} @ {game.home_team}
                 </td>
@@ -201,11 +238,11 @@ function WeeklyView({
                   if (pick.credited) {
                     const cellColor =
                       pick.is_correct === true
-                        ? 'bg-green-50 text-green-600'
-                        : 'bg-red-50 text-red-500'
+                        ? 'bg-green-50 text-green-500 border-2 border-dashed border-green-200'
+                        : 'bg-red-50 text-red-400 border-2 border-dashed border-red-200'
                     return (
-                      <td key={entry.user_id} className={`px-3 py-2 text-center font-medium ${cellColor}`}>
-                        *
+                      <td key={entry.user_id} className="p-1 text-center">
+                        <div className={`rounded py-1.5 font-bold text-base ${cellColor}`}>*</div>
                       </td>
                     )
                   }
@@ -231,7 +268,8 @@ function WeeklyView({
                   )
                 })}
               </tr>
-            ))}
+              )
+            })}
           </tbody>
           <tfoot>
             <tr className="bg-gray-50 border-t-2 border-gray-200 font-semibold">

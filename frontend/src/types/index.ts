@@ -82,6 +82,7 @@ export interface WeeklyLeaderboardGame {
   home_team_name: string
   away_team_name: string
   winner: 'home' | 'away' | 'tie' | null
+  kickoff_at: string
 }
 
 export interface WeeklyLeaderboardResponse {
