@@ -1,7 +1,14 @@
 import { useEffect, useState } from 'react'
-import { getActiveWeek, getAnnouncements } from '../api/client'
+import { getActiveWeek, getAnnouncementDraft, getAnnouncements } from '../api/client'
 import FormattedText from '../components/FormattedText'
-import type { Announcement, Week } from '../types'
+import type { Announcement, DraftSections, Week } from '../types'
+
+function assembleDraft(d: DraftSections): string {
+  return [d.intro, d.results, d.records, d.pre_games_note, d.games, d.outro]
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .join('\n\n')
+}
 
 function HowItWorks() {
   const [open, setOpen] = useState(false)
@@ -53,6 +60,7 @@ function HowItWorks() {
 export default function Home() {
   const [week, setWeek] = useState<Week | null>(null)
   const [announcement, setAnnouncement] = useState<Announcement | null>(null)
+  const [draftText, setDraftText] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
@@ -65,6 +73,13 @@ export default function Home() {
         const weekAnnouncements = announcements.filter((a) => a.week_id === w.id)
         if (weekAnnouncements.length > 0) {
           setAnnouncement(weekAnnouncements[0])
+        } else {
+          // Nobody's posted a real announcement yet — fall back to the
+          // auto-generated draft so the page isn't empty. This may differ
+          // from whatever Jack eventually sends by hand if he adds his own
+          // message on top.
+          const { data: d } = await getAnnouncementDraft(w.week_number, w.season_year)
+          setDraftText(assembleDraft(d))
         }
       } catch {
         setError('Could not load announcement.')
@@ -97,6 +112,15 @@ export default function Home() {
       {announcement ? (
         <div className="rounded-xl border border-gray-200 bg-white px-5 py-4 text-sm text-gray-800 leading-relaxed">
           <FormattedText text={announcement.intro} />
+        </div>
+      ) : draftText ? (
+        <div className="space-y-2">
+          <div className="rounded-xl border border-gray-200 bg-white px-5 py-4 text-sm text-gray-800 leading-relaxed">
+            <FormattedText text={draftText} />
+          </div>
+          <p className="text-xs text-gray-400 text-center">
+            Auto-generated preview — the email you receive may look a little different.
+          </p>
         </div>
       ) : (
         <div className="text-center py-16 text-gray-400">

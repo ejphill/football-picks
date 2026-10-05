@@ -9,6 +9,10 @@ import {
 } from '../api/client'
 import type { AnnounceStatus, Week } from '../types'
 
+// Auto-send relies on Resend, which has no verified sending domain yet — the
+// status/toggle UI is hidden until that's sorted out. Flip to re-enable.
+const SHOW_AUTO_SEND_STATUS = false
+
 function formatAutoSendAt(iso: string): string {
   return new Date(iso).toLocaleString('en-US', {
     weekday: 'short',
@@ -167,7 +171,12 @@ export default function AdminCompose() {
         </p>
       </div>
 
-      {announceStatus && (
+      {/* Hidden for now — auto-send relies on Resend, which has no verified
+          sending domain yet, so it's defaulted off for every week at the DB
+          level (migration 013) and this control isn't relevant until that's
+          sorted out. Re-enable by flipping this flag once email sending is
+          back online. */}
+      {SHOW_AUTO_SEND_STATUS && announceStatus && (
         <div className="mb-6 flex items-center justify-between gap-4 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
           <p className="text-sm text-gray-700">
             {announceStatus.has_announcement ? (

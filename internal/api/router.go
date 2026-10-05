@@ -93,6 +93,7 @@ func NewRouter(pool *pgxpool.Pool, jwks keyfunc.Keyfunc, corsOrigin string, lbCa
 
 		// Announcements
 		r.Get("/announcements", announcementsH.List)
+		r.Get("/announcements/draft", announcementsH.Draft)
 		r.Get("/announcements/{id}", announcementsH.Get)
 
 		// Admin-only routes

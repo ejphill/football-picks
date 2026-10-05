@@ -96,6 +96,11 @@ export const setGameIncluded = (gameId: string, includedInPicks: boolean) =>
 export const getDraftAnnouncement = (week: number, season: number) =>
   api.get<DraftSections>(`/admin/draft-announcement?week=${week}&season=${season}`)
 
+// Public (non-admin) version — used as a Home page fallback when nobody's
+// posted a real announcement for the week yet.
+export const getAnnouncementDraft = (week: number, season: number) =>
+  api.get<DraftSections>(`/announcements/draft?week=${week}&season=${season}`)
+
 export const getAnnounceStatus = (week: number, season: number) =>
   api.get<AnnounceStatus>(`/admin/announce-status?week=${week}&season=${season}`)
 
