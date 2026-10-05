@@ -192,7 +192,9 @@ function WeeklyView({
               </th>
               {sorted.map((e) => {
                 const windowCount = missedWindowCount(e)
-                const creditedCount = e.picks.filter((p) => p.credited).length
+                const creditedPicks = e.picks.filter((p) => p.credited)
+                const creditedCorrect = creditedPicks.filter((p) => p.is_correct).length
+                const creditedTotal = creditedPicks.length
                 return (
                   <th
                     key={e.user_id}
@@ -208,7 +210,7 @@ function WeeklyView({
                       <span className="block text-[10px] font-normal normal-case text-amber-600 leading-tight">
                         missed {windowCount === 1 ? 'a window' : `${windowCount} windows`} —
                         <br />
-                        {creditedCount} game{creditedCount === 1 ? '' : 's'} credited (*)
+                        {creditedCorrect} of {creditedTotal} credited correct (*)
                       </span>
                     )}
                   </th>
