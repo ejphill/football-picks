@@ -9,7 +9,6 @@ import (
 
 	"github.com/evan/football-picks/internal/db/queries"
 	"github.com/evan/football-picks/internal/models"
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -75,15 +74,14 @@ func BuildDraft(ctx context.Context, pool *pgxpool.Pool, week *models.Week) (*Dr
 		if err != nil {
 			return nil, fmt.Errorf("get prev week: %w", err)
 		}
-		allPicks, err := queries.GetAllPicksByWeek(ctx, pool, prevWeek.ID)
+		// Floor-scored, same as the weekly leaderboard — a player who missed
+		// a window gets credited rather than showing up at a misleading raw
+		// (or absent) 0.
+		prevScores, err := queries.GetWeeklyLeaderboardScores(ctx, pool, week.SeasonYear, prevWeek.ID)
 		if err != nil {
-			return nil, fmt.Errorf("get prev picks: %w", err)
+			return nil, fmt.Errorf("get prev scores: %w", err)
 		}
-		prevGames, err := queries.GetGamesByWeek(ctx, pool, prevWeek.ID)
-		if err != nil {
-			return nil, fmt.Errorf("get prev games: %w", err)
-		}
-		d.Results = buildResults(allPicks, prevGames)
+		d.Results = buildResults(prevScores)
 	}
 
 	return d, nil
@@ -101,38 +99,37 @@ func Assemble(d *DraftSections) string {
 	return strings.Join(nonEmpty, "\n\n")
 }
 
-func buildResults(allPicks []queries.UserPickRow, games []models.Game) string {
-	if len(allPicks) == 0 {
+func buildResults(scores []queries.WeeklyScoreRow) string {
+	if len(scores) == 0 {
 		return ""
 	}
 
-	totalGames := len(games)
-
-	// Aggregate correct count per user.
-	userCorrect := map[uuid.UUID]int{}
-	userNames := map[uuid.UUID]string{}
-	for _, p := range allPicks {
-		userNames[p.UserID] = p.DisplayName
-		if p.IsCorrect != nil && *p.IsCorrect {
-			userCorrect[p.UserID]++
+	// Every season participant's Total should match the week's full game
+	// count once all its windows are past (which they are, by the time this
+	// runs for the *previous* week) — but take the max defensively rather
+	// than assuming they're all identical.
+	totalGames := 0
+	for _, s := range scores {
+		if s.Total > totalGames {
+			totalGames = s.Total
 		}
 	}
 
-	// Group users by correct count.
+	// Group users by (floor-scored) correct count.
 	scoreMap := map[int][]string{}
-	for uid, name := range userNames {
-		scoreMap[userCorrect[uid]] = append(scoreMap[userCorrect[uid]], name)
+	for _, s := range scores {
+		scoreMap[s.Correct] = append(scoreMap[s.Correct], s.DisplayName)
 	}
 
-	scores := make([]int, 0, len(scoreMap))
+	distinctScores := make([]int, 0, len(scoreMap))
 	for s := range scoreMap {
-		scores = append(scores, s)
+		distinctScores = append(distinctScores, s)
 	}
-	sort.Sort(sort.Reverse(sort.IntSlice(scores)))
+	sort.Sort(sort.Reverse(sort.IntSlice(distinctScores)))
 
-	numGroups := len(scores)
+	numGroups := len(distinctScores)
 	lines := []string{"Here are the results from last week:\n"}
-	for i, score := range scores {
+	for i, score := range distinctScores {
 		names := scoreMap[score]
 		sort.Strings(names)
 		bangs := strings.Repeat("!", numGroups-i)
