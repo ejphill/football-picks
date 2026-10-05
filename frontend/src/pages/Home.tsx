@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { getActiveWeek, getAnnouncementDraft, getAnnouncements } from '../api/client'
+import { getActiveWeek, getAnnouncementDraft, getAnnouncements, getGames } from '../api/client'
 import FormattedText from '../components/FormattedText'
-import type { Announcement, DraftSections, Week } from '../types'
+import ScoreStrip from '../components/ScoreStrip'
+import type { Announcement, DraftSections, Game, Week } from '../types'
 
 function assembleDraft(d: DraftSections): string {
   return [d.intro, d.results, d.records, d.pre_games_note, d.games, d.outro]
@@ -59,6 +60,7 @@ function HowItWorks() {
 
 export default function Home() {
   const [week, setWeek] = useState<Week | null>(null)
+  const [games, setGames] = useState<Game[]>([])
   const [announcement, setAnnouncement] = useState<Announcement | null>(null)
   const [draftText, setDraftText] = useState('')
   const [loading, setLoading] = useState(true)
@@ -69,6 +71,7 @@ export default function Home() {
       try {
         const { data: w } = await getActiveWeek()
         setWeek(w)
+        getGames(w.week_number, w.season_year).then((r) => setGames(r.data))
         const { data: announcements } = await getAnnouncements(w.season_year)
         const weekAnnouncements = announcements.filter((a) => a.week_id === w.id)
         if (weekAnnouncements.length > 0) {
@@ -108,6 +111,8 @@ export default function Home() {
         <h2 className="text-xl font-bold text-gray-900">Week {week?.week_number}</h2>
         <span className="text-sm text-gray-400">{week?.season_year} season</span>
       </div>
+
+      <ScoreStrip games={games} />
 
       {announcement ? (
         <div className="rounded-xl border border-gray-200 bg-white px-5 py-4 text-sm text-gray-800 leading-relaxed">

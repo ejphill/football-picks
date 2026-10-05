@@ -1,4 +1,5 @@
 import type { Game } from '../types'
+import { liveStatusBadge } from '../utils/gameStatus'
 
 interface GameCardProps {
   game: Game
@@ -25,21 +26,9 @@ export default function GameCard({ game, selected, locked: isLocked, onSelect }:
           : `${game.home_team} -${Math.abs(game.spread)}`
       : 'N/A'
 
-  const periodLabel = (period: number) =>
-    period <= 4 ? `Q${period}` : period === 5 ? 'OT' : `${period - 4}OT`
-
-  const statusBadge =
-    game.status === 'in_progress' ? (
-      <span className="inline-flex items-center gap-1 text-xs font-semibold text-red-600">
-        <span className="w-1.5 h-1.5 rounded-full bg-red-600 animate-pulse" />
-        {game.period != null ? periodLabel(game.period) : 'Live'}
-        {game.display_clock ? ` ${game.display_clock}` : ''}
-      </span>
-    ) : game.status === 'final' ? (
-      <span className="text-xs font-semibold text-gray-500">Final</span>
-    ) : (
-      <span className="text-xs font-medium text-gray-400">Locked</span>
-    )
+  const statusBadge = liveStatusBadge(game) ?? (
+    <span className="text-xs font-medium text-gray-400">Locked</span>
+  )
 
   const teamButton = (side: 'home' | 'away') => {
     const name = side === 'home' ? game.home_team_name : game.away_team_name
