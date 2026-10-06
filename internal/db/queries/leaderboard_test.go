@@ -361,3 +361,50 @@ func TestSeasonStandings_UnscoredPicksDontCountAsLosses(t *testing.T) {
 		t.Errorf("Total: got %d, want 1 (unscored pick should not count)", standings[0].Total)
 	}
 }
+
+// TestGetSeasonStandingsThroughWeek verifies that the "through week" variant
+// excludes the given week's own games — e.g. the announcement's records
+// section shouldn't already include this week's Sunday results just
+// because someone checks it on Monday before Jack's sent anything.
+func TestGetSeasonStandingsThroughWeek(t *testing.T) {
+	pool := testutil.NewTestDB(t)
+	testutil.ResetDB(t, pool)
+
+	season := testutil.SeedSeason(t, pool, 2025, true)
+	week1 := testutil.SeedWeek(t, pool, season.ID, 1, time.Now().Add(-48*time.Hour))
+	week2 := testutil.SeedWeek(t, pool, season.ID, 2, time.Now().Add(-time.Hour))
+
+	user := testutil.SeedUser(t, pool, "uid-tw-user", "Gary", "gary@tw.com")
+
+	winner := "home"
+	g1 := testutil.SeedGameAt(t, pool, week1.ID, "espn-tw-w1", "KC", "DET", "final", &winner, time.Now().Add(-47*time.Hour))
+	g2 := testutil.SeedGameAt(t, pool, week2.ID, "espn-tw-w2", "NE", "MIA", "final", &winner, time.Now().Add(-2*time.Hour))
+
+	testutil.SeedPick(t, pool, user.ID, g1.ID, "home") // week 1: correct
+	testutil.SeedPick(t, pool, user.ID, g2.ID, "home") // week 2: correct, just scored
+
+	if err := queries.ScorePicks(context.Background(), pool); err != nil {
+		t.Fatalf("score picks: %v", err)
+	}
+
+	// Live standings include both weeks.
+	live, err := queries.GetSeasonStandings(context.Background(), pool, 2025)
+	if err != nil {
+		t.Fatalf("get standings: %v", err)
+	}
+	if live[0].Correct != 2 || live[0].Total != 2 {
+		t.Errorf("live standings: got %d/%d, want 2/2 (both weeks)", live[0].Correct, live[0].Total)
+	}
+
+	// "Through week 2" excludes week 2 itself — only week 1 counts.
+	frozen, err := queries.GetSeasonStandingsThroughWeek(context.Background(), pool, 2025, 2)
+	if err != nil {
+		t.Fatalf("get standings through week: %v", err)
+	}
+	if len(frozen) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(frozen))
+	}
+	if frozen[0].Correct != 1 || frozen[0].Total != 1 {
+		t.Errorf("frozen standings: got %d/%d, want 1/1 (week 1 only, week 2 excluded)", frozen[0].Correct, frozen[0].Total)
+	}
+}

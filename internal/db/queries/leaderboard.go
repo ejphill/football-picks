@@ -23,7 +23,11 @@ type WeeklyScoreRow struct {
 // kickoff hour) per week, so floor credit can be computed per window
 // across either a single week or an entire season.
 //
-// $1 = season year, $2 = week_id (nullable — NULL means "whole season").
+// $1 = season year, $2 = week_id (nullable — NULL means "whole season"),
+// $3 = exclusive week_number upper bound (nullable — NULL means no cutoff;
+// used to compute "standings through the end of last week" for the
+// announcement, so it doesn't drift as the current week's own games get
+// scored throughout the week).
 const floorScoreCTEs = `
 	WITH included_games AS (
 		SELECT g.id, g.week_id, date_trunc('hour', g.kickoff_at) AS kickoff_window
@@ -32,6 +36,7 @@ const floorScoreCTEs = `
 		JOIN   seasons s ON s.id = w.season_id
 		WHERE  s.year = $1 AND g.included_in_picks = TRUE
 		  AND  ($2::int IS NULL OR g.week_id = $2)
+		  AND  ($3::int IS NULL OR w.week_number < $3)
 	),
 	window_sizes AS (
 		SELECT week_id, kickoff_window, COUNT(*) AS game_count
@@ -97,12 +102,15 @@ const floorScoreCTEs = `
 
 // GetFloorScoredTotals returns per-user floor-scored totals. If weekID is
 // nil, totals are summed across the whole season; otherwise scoped to one
-// week. A pick on a game that hasn't been scored yet (is_correct still NULL)
-// doesn't count toward total — it's neither a win nor a loss until the game
-// is final. A fully- or partially-missed kickoff window is credited at the
-// minimum correct count any other participant achieved in that window,
-// rather than counting as losses.
-func GetFloorScoredTotals(ctx context.Context, pool *pgxpool.Pool, seasonYear int, weekID *int) ([]WeeklyScoreRow, error) {
+// week. If beforeWeekNumber is set, only weeks strictly before it count —
+// used for "standings as of the start of this week," which shouldn't drift
+// as the current week's own games get scored. A pick on a game that hasn't
+// been scored yet (is_correct still NULL) doesn't count toward total — it's
+// neither a win nor a loss until the game is final. A fully- or
+// partially-missed kickoff window is credited at the minimum correct count
+// any other participant achieved in that window, rather than counting as
+// losses.
+func GetFloorScoredTotals(ctx context.Context, pool *pgxpool.Pool, seasonYear int, weekID, beforeWeekNumber *int) ([]WeeklyScoreRow, error) {
 	rows, err := pool.Query(ctx, floorScoreCTEs+`
 		, actual_totals AS (
 			SELECT p.user_id,
@@ -128,7 +136,7 @@ func GetFloorScoredTotals(ctx context.Context, pool *pgxpool.Pool, seasonYear in
 		LEFT JOIN actual_totals at ON at.user_id = sp.user_id
 		LEFT JOIN credit_totals ct ON ct.user_id = sp.user_id
 		ORDER BY correct DESC, total ASC, u.display_name
-	`, seasonYear, weekID)
+	`, seasonYear, weekID, beforeWeekNumber)
 	if err != nil {
 		return nil, fmt.Errorf("get floor scored totals: %w", err)
 	}
@@ -147,13 +155,28 @@ func GetFloorScoredTotals(ctx context.Context, pool *pgxpool.Pool, seasonYear in
 
 // GetWeeklyLeaderboardScores is GetFloorScoredTotals scoped to one week.
 func GetWeeklyLeaderboardScores(ctx context.Context, pool *pgxpool.Pool, seasonYear, weekID int) ([]WeeklyScoreRow, error) {
-	return GetFloorScoredTotals(ctx, pool, seasonYear, &weekID)
+	return GetFloorScoredTotals(ctx, pool, seasonYear, &weekID, nil)
 }
 
 // GetSeasonStandings ranks users by correct DESC, total ASC (fewer picks
-// wins tiebreaker) — GetFloorScoredTotals summed across the whole season.
+// wins tiebreaker) — GetFloorScoredTotals summed across the whole season,
+// live/current (includes the active week's own games as they're scored).
 func GetSeasonStandings(ctx context.Context, pool *pgxpool.Pool, seasonYear int) ([]models.SeasonLeaderboardEntry, error) {
-	rows, err := GetFloorScoredTotals(ctx, pool, seasonYear, nil)
+	rows, err := GetFloorScoredTotals(ctx, pool, seasonYear, nil, nil)
+	return toSeasonStandings(rows, err)
+}
+
+// GetSeasonStandingsThroughWeek is GetSeasonStandings frozen as of the start
+// of beforeWeekNumber — i.e. it excludes that week and everything after, so
+// it doesn't drift as that week's own games get scored throughout the week.
+// Used for the announcement's season-records section, which is meant to
+// represent "where things stood heading into this week," not a live total.
+func GetSeasonStandingsThroughWeek(ctx context.Context, pool *pgxpool.Pool, seasonYear, beforeWeekNumber int) ([]models.SeasonLeaderboardEntry, error) {
+	rows, err := GetFloorScoredTotals(ctx, pool, seasonYear, nil, &beforeWeekNumber)
+	return toSeasonStandings(rows, err)
+}
+
+func toSeasonStandings(rows []WeeklyScoreRow, err error) ([]models.SeasonLeaderboardEntry, error) {
 	if err != nil {
 		return nil, err
 	}
@@ -194,7 +217,7 @@ func GetWindowCredits(ctx context.Context, pool *pgxpool.Pool, seasonYear, weekI
 		SELECT user_id, kickoff_window, credit_correct, credit_total
 		FROM   window_credits
 		WHERE  credit_total > 0
-	`, seasonYear, weekID)
+	`, seasonYear, weekID, nil)
 	if err != nil {
 		return nil, fmt.Errorf("get window credits: %w", err)
 	}

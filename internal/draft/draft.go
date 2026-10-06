@@ -61,8 +61,11 @@ func BuildDraft(ctx context.Context, pool *pgxpool.Pool, week *models.Week) (*Dr
 	}
 	d.Games = buildGames(games)
 
-	// Season standings for records section.
-	standings, err := queries.GetSeasonStandings(ctx, pool, week.SeasonYear)
+	// Season standings for records section — frozen as of the start of this
+	// week, so it doesn't drift as this week's own games get scored (e.g.
+	// Sunday's results shouldn't already be baked into "records" if someone
+	// checks the draft on Monday before Jack's actually sent anything).
+	standings, err := queries.GetSeasonStandingsThroughWeek(ctx, pool, week.SeasonYear, week.WeekNumber)
 	if err != nil {
 		return nil, fmt.Errorf("get standings: %w", err)
 	}
