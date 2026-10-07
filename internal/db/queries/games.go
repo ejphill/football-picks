@@ -153,6 +153,25 @@ func ScorePicks(ctx context.Context, pool *pgxpool.Pool) error {
 	return nil
 }
 
+// GetFrozenRecords returns the cached "season records" text for a week, if
+// it's been computed before — nil if not yet cached.
+func GetFrozenRecords(ctx context.Context, pool *pgxpool.Pool, weekID int) (*string, error) {
+	var text *string
+	if err := pool.QueryRow(ctx, `SELECT frozen_records FROM weeks WHERE id = $1`, weekID).Scan(&text); err != nil {
+		return nil, fmt.Errorf("get frozen records: %w", err)
+	}
+	return text, nil
+}
+
+// SetFrozenRecords stores the computed "season records" text for a week, so
+// future reads skip recomputing the floor-scoring standings query entirely.
+func SetFrozenRecords(ctx context.Context, pool *pgxpool.Pool, weekID int, text string) error {
+	if _, err := pool.Exec(ctx, `UPDATE weeks SET frozen_records = $2 WHERE id = $1`, weekID, text); err != nil {
+		return fmt.Errorf("set frozen records: %w", err)
+	}
+	return nil
+}
+
 func GetWeekByID(ctx context.Context, pool *pgxpool.Pool, id int) (*models.Week, error) {
 	w := &models.Week{}
 	err := pool.QueryRow(ctx, `

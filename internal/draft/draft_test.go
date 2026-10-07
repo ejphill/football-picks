@@ -118,6 +118,62 @@ func TestBuildDraft_ResultsFloorCreditMissedWeek(t *testing.T) {
 	}
 }
 
+// TestBuildDraft_RecordsAreFrozenAfterFirstCall verifies that once a week's
+// records section has been computed, it's persisted and reused — a second
+// call sees the same text even after the underlying data changes, rather
+// than recomputing (and drifting) every time.
+func TestBuildDraft_RecordsAreFrozenAfterFirstCall(t *testing.T) {
+	pool := testutil.NewTestDB(t)
+	testutil.ResetDB(t, pool)
+
+	season := testutil.SeedSeason(t, pool, 2025, true)
+	week1 := testutil.SeedWeek(t, pool, season.ID, 1, time.Now().Add(-48*time.Hour))
+	week2 := testutil.SeedWeek(t, pool, season.ID, 2, time.Now().Add(time.Hour))
+
+	winner := "home"
+	game1 := testutil.SeedGameAt(t, pool, week1.ID, "espn-frozen-w1", "KC", "DET", "final", &winner, time.Now().Add(-47*time.Hour))
+	testutil.SeedGame(t, pool, week2.ID, "espn-frozen-w2", "NE", "MIA", "scheduled", nil)
+
+	user := testutil.SeedUser(t, pool, "uid-frozen-1", "Frank", "frank@frozen.test")
+	testutil.SeedPick(t, pool, user.ID, game1.ID, "home") // correct
+
+	if err := queries.ScorePicks(context.Background(), pool); err != nil {
+		t.Fatalf("score picks: %v", err)
+	}
+
+	w2, err := queries.GetWeekByNumberAndSeason(context.Background(), pool, 2, 2025)
+	if err != nil {
+		t.Fatalf("GetWeekByNumberAndSeason: %v", err)
+	}
+
+	first, err := draft.BuildDraft(context.Background(), pool, w2)
+	if err != nil {
+		t.Fatalf("BuildDraft (first): %v", err)
+	}
+	if !contains(first.Records, "Frank") {
+		t.Fatalf("expected records to mention Frank, got %q", first.Records)
+	}
+
+	// Add a second user with picks AFTER the first BuildDraft call — if
+	// records were still live, this would change the output.
+	user2 := testutil.SeedUser(t, pool, "uid-frozen-2", "Gina", "gina@frozen.test")
+	testutil.SeedPick(t, pool, user2.ID, game1.ID, "home")
+	if err := queries.ScorePicks(context.Background(), pool); err != nil {
+		t.Fatalf("score picks (2): %v", err)
+	}
+
+	second, err := draft.BuildDraft(context.Background(), pool, w2)
+	if err != nil {
+		t.Fatalf("BuildDraft (second): %v", err)
+	}
+	if second.Records != first.Records {
+		t.Errorf("records should be frozen — got a different value on second call.\nfirst:  %q\nsecond: %q", first.Records, second.Records)
+	}
+	if contains(second.Records, "Gina") {
+		t.Error("frozen records should not pick up Gina, who was added after the first BuildDraft call")
+	}
+}
+
 func TestAssemble_JoinsNonEmptySections(t *testing.T) {
 	d := &draft.DraftSections{
 		Intro:   "Hello!",

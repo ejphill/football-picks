@@ -3,6 +3,7 @@ package draft
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sort"
 	"strings"
 	"time"
@@ -62,14 +63,31 @@ func BuildDraft(ctx context.Context, pool *pgxpool.Pool, week *models.Week) (*Dr
 	d.Games = buildGames(games)
 
 	// Season standings for records section — frozen as of the start of this
-	// week, so it doesn't drift as this week's own games get scored (e.g.
-	// Sunday's results shouldn't already be baked into "records" if someone
-	// checks the draft on Monday before Jack's actually sent anything).
-	standings, err := queries.GetSeasonStandingsThroughWeek(ctx, pool, week.SeasonYear, week.WeekNumber)
+	// week, computed once and cached on the week row thereafter. Deliberately
+	// a permanent cache, not a TTL one: the value represents "standings as
+	// of the start of this week," which shouldn't change as the week
+	// progresses, so there's no reason to ever recompute it once set (the
+	// tradeoff: a rare after-the-fact score correction for a past week
+	// wouldn't be reflected — acceptable for a recap display, since the
+	// real leaderboard stays fully live regardless).
+	frozen, err := queries.GetFrozenRecords(ctx, pool, week.ID)
 	if err != nil {
-		return nil, fmt.Errorf("get standings: %w", err)
+		return nil, fmt.Errorf("get frozen records: %w", err)
 	}
-	d.Records = buildRecords(standings)
+	if frozen != nil {
+		d.Records = *frozen
+	} else {
+		standings, err := queries.GetSeasonStandingsThroughWeek(ctx, pool, week.SeasonYear, week.WeekNumber)
+		if err != nil {
+			return nil, fmt.Errorf("get standings: %w", err)
+		}
+		d.Records = buildRecords(standings)
+		if err := queries.SetFrozenRecords(ctx, pool, week.ID, d.Records); err != nil {
+			// Non-fatal — the records were computed fine, just couldn't be
+			// cached for next time, so the next call recomputes instead.
+			slog.Warn("draft: failed to cache frozen records", "week_id", week.ID, "err", err)
+		}
+	}
 
 	// Previous week results (omit for week 1).
 	if week.WeekNumber > 1 {
