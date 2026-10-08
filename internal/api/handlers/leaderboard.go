@@ -134,10 +134,14 @@ func (h *LeaderboardHandler) Weekly(w http.ResponseWriter, r *http.Request) {
 	// Assign floor credit to specific missed-game cells. Credit is only ever
 	// computed for past windows, so every game here has already kicked off —
 	// no visibility gating needed, these are safe to show to any viewer.
-	windowCredits, err := queries.GetWindowCredits(r.Context(), h.pool, week.SeasonYear, week.ID)
-	if err != nil {
-		respondError(w, http.StatusInternalServerError, "internal error")
-		return
+	windowCredits, ok := h.lb.GetWindowCredits(week.ID)
+	if !ok {
+		windowCredits, err = queries.GetWindowCredits(r.Context(), h.pool, week.SeasonYear, week.ID)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		h.lb.SetWindowCredits(week.ID, windowCredits)
 	}
 	for _, wc := range windowCredits {
 		var missed []models.Game

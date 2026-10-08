@@ -24,6 +24,9 @@ func TestLeaderboardCache_MissReturnsEmpty(t *testing.T) {
 	if _, ok := c.GetSeasonStandings(2025); ok {
 		t.Error("expected miss on empty season cache")
 	}
+	if _, ok := c.GetWindowCredits(1); ok {
+		t.Error("expected miss on empty window credits cache")
+	}
 }
 
 func TestLeaderboardCache_SetAndGet(t *testing.T) {
@@ -49,6 +52,16 @@ func TestLeaderboardCache_SetAndGet(t *testing.T) {
 	if gotS[0].DisplayName != "Bob" {
 		t.Errorf("unexpected standing: %+v", gotS[0])
 	}
+
+	credits := []queries.WindowCreditRow{{UserID: uuid.New(), CreditCorrect: 2, CreditTotal: 3}}
+	c.SetWindowCredits(7, credits)
+	gotC, ok := c.GetWindowCredits(7)
+	if !ok {
+		t.Fatal("expected window credits hit after set")
+	}
+	if len(gotC) != 1 || gotC[0].CreditTotal != 3 {
+		t.Errorf("unexpected cached window credits: %+v", gotC)
+	}
 }
 
 func TestLeaderboardCache_Invalidate(t *testing.T) {
@@ -57,6 +70,7 @@ func TestLeaderboardCache_Invalidate(t *testing.T) {
 	scores := []queries.WeeklyScoreRow{{UserID: uuid.New(), Correct: 1, Total: 1}}
 	c.SetWeeklyScores(3, scores)
 	c.SetSeasonStandings(2025, []models.SeasonLeaderboardEntry{{Rank: 1}})
+	c.SetWindowCredits(3, []queries.WindowCreditRow{{CreditTotal: 1}})
 
 	c.InvalidateScores()
 
@@ -65,6 +79,9 @@ func TestLeaderboardCache_Invalidate(t *testing.T) {
 	}
 	if _, ok := c.GetSeasonStandings(2025); ok {
 		t.Error("season standings should be gone after invalidation")
+	}
+	if _, ok := c.GetWindowCredits(3); ok {
+		t.Error("window credits should be gone after invalidation")
 	}
 }
 

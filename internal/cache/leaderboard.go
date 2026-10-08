@@ -17,21 +17,26 @@ const (
 
 	// same rationale as weeklyScoresTTL
 	seasonStandingsTTL = 1 * time.Hour
+
+	// same rationale as weeklyScoresTTL
+	windowCreditsTTL = 1 * time.Hour
 )
 
-// LeaderboardCache wraps the two most expensive leaderboard queries.
+// LeaderboardCache wraps the most expensive leaderboard queries.
 // Redis-backed when rdb is set; in-process TTL otherwise.
 type LeaderboardCache struct {
-	weekly *ttlCache[int, []queries.WeeklyScoreRow]
-	season *ttlCache[int, []models.SeasonLeaderboardEntry]
-	rdb    *redis.Client // nil → in-process fallback
+	weekly        *ttlCache[int, []queries.WeeklyScoreRow]
+	season        *ttlCache[int, []models.SeasonLeaderboardEntry]
+	windowCredits *ttlCache[int, []queries.WindowCreditRow]
+	rdb           *redis.Client // nil → in-process fallback
 }
 
 func NewLeaderboardCache(rdb *redis.Client) *LeaderboardCache {
 	return &LeaderboardCache{
-		weekly: newTTLCache[int, []queries.WeeklyScoreRow](weeklyScoresTTL),
-		season: newTTLCache[int, []models.SeasonLeaderboardEntry](seasonStandingsTTL),
-		rdb:    rdb,
+		weekly:        newTTLCache[int, []queries.WeeklyScoreRow](weeklyScoresTTL),
+		season:        newTTLCache[int, []models.SeasonLeaderboardEntry](seasonStandingsTTL),
+		windowCredits: newTTLCache[int, []queries.WindowCreditRow](windowCreditsTTL),
+		rdb:           rdb,
 	}
 }
 
@@ -41,6 +46,10 @@ func weeklyKey(weekID int) string {
 
 func seasonKey(year int) string {
 	return fmt.Sprintf("fp:lb:season:%d", year)
+}
+
+func windowCreditsKey(weekID int) string {
+	return fmt.Sprintf("fp:lb:windowcredits:%d", weekID)
 }
 
 func (c *LeaderboardCache) GetWeeklyScores(weekID int) ([]queries.WeeklyScoreRow, bool) {
@@ -73,6 +82,21 @@ func (c *LeaderboardCache) SetSeasonStandings(year int, standings []models.Seaso
 	c.season.set(year, standings)
 }
 
+func (c *LeaderboardCache) GetWindowCredits(weekID int) ([]queries.WindowCreditRow, bool) {
+	if c.rdb != nil {
+		return redisGet[[]queries.WindowCreditRow](context.Background(), c.rdb, windowCreditsKey(weekID))
+	}
+	return c.windowCredits.get(weekID)
+}
+
+func (c *LeaderboardCache) SetWindowCredits(weekID int, credits []queries.WindowCreditRow) {
+	if c.rdb != nil {
+		redisSet(context.Background(), c.rdb, windowCreditsKey(weekID), credits, windowCreditsTTL)
+		return
+	}
+	c.windowCredits.set(weekID, credits)
+}
+
 // InvalidateScores clears all entries so the next request picks up fresh scores.
 func (c *LeaderboardCache) InvalidateScores() {
 	if c.rdb != nil {
@@ -81,4 +105,5 @@ func (c *LeaderboardCache) InvalidateScores() {
 	}
 	c.weekly.clear()
 	c.season.clear()
+	c.windowCredits.clear()
 }
