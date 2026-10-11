@@ -3,10 +3,12 @@ import FormattedText from '../components/FormattedText'
 import {
   getActiveWeek,
   getAnnounceStatus,
+  getAnnouncementRecipients,
   getDraftAnnouncement,
   postAnnouncement,
   setSkipAnnounce,
 } from '../api/client'
+import { copyFormatted } from '../utils/announcementFormat'
 import type { AnnounceStatus, Week } from '../types'
 
 // Auto-send relies on Resend, which has no verified sending domain yet — the
@@ -69,6 +71,10 @@ export default function AdminCompose() {
   const [announceStatus, setAnnounceStatus] = useState<AnnounceStatus | null>(null)
   const [togglingSkip, setTogglingSkip] = useState(false)
 
+  const [copiedAnnouncement, setCopiedAnnouncement] = useState(false)
+  const [copiedRecipients, setCopiedRecipients] = useState(false)
+  const [recipientsError, setRecipientsError] = useState('')
+
   useEffect(() => {
     const load = async () => {
       try {
@@ -113,6 +119,30 @@ export default function AdminCompose() {
       .filter(Boolean)
     return parts.join('\n\n')
   }, [intro, resultsBlock, recordsBlock, preGamesNote, gamesBlock, outro])
+
+  const handleCopyAnnouncement = async () => {
+    if (!assembled.trim()) return
+    try {
+      await copyFormatted(assembled.trim())
+      setCopiedAnnouncement(true)
+      setTimeout(() => setCopiedAnnouncement(false), 2000)
+    } catch {
+      setRecipientsError('Failed to copy. Try again.')
+    }
+  }
+
+  const handleCopyRecipients = async () => {
+    if (!week) return
+    setRecipientsError('')
+    try {
+      const { data } = await getAnnouncementRecipients(week.week_number, week.season_year)
+      await navigator.clipboard.writeText(data.emails.join(', '))
+      setCopiedRecipients(true)
+      setTimeout(() => setCopiedRecipients(false), 2000)
+    } catch {
+      setRecipientsError('Failed to copy recipients. Try again.')
+    }
+  }
 
   const handlePost = async () => {
     if (!week || !assembled.trim()) return
@@ -276,6 +306,30 @@ export default function AdminCompose() {
               : <span className="text-gray-400">Edit sections on the left…</span>
             }
           </div>
+
+          {recipientsError && <p className="text-sm text-red-500">{recipientsError}</p>}
+
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              onClick={handleCopyAnnouncement}
+              disabled={!assembled.trim()}
+              className="py-2.5 rounded-xl border border-gray-300 text-gray-700 font-medium text-sm
+                         hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {copiedAnnouncement ? 'Copied!' : 'Copy Announcement'}
+            </button>
+            <button
+              onClick={handleCopyRecipients}
+              disabled={!week}
+              className="py-2.5 rounded-xl border border-gray-300 text-gray-700 font-medium text-sm
+                         hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {copiedRecipients ? 'Copied!' : 'Copy Recipients'}
+            </button>
+          </div>
+          <p className="text-xs text-gray-400 text-center">
+            Copies formatting (bold, colored day headers) so pasting into Gmail looks right.
+          </p>
 
           {submitError && <p className="text-sm text-red-500">{submitError}</p>}
 

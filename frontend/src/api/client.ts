@@ -107,4 +107,7 @@ export const getAnnounceStatus = (week: number, season: number) =>
 export const setSkipAnnounce = (weekId: number, skip: boolean) =>
   api.patch<Week>(`/admin/weeks/${weekId}/skip-announce`, { skip })
 
+export const getAnnouncementRecipients = (week: number, season: number) =>
+  api.get<{ emails: string[] }>(`/admin/announcement-recipients?week=${week}&season=${season}`)
+
 export default api

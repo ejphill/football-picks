@@ -1,14 +1,4 @@
-// Mirrors internal/notify/mailer.go's dayColors — keep hex values in sync
-// so the compose preview matches the actual sent email.
-const DAY_COLORS: Record<string, string> = {
-  Tuesday: '#0f766e',
-  Wednesday: '#6d28d9',
-  Thursday: '#c2410c',
-  Friday: '#b45309',
-  Saturday: '#1d4ed8',
-  Sunday: '#15803d',
-  Monday: '#b91c1c',
-}
+import { DAY_COLORS } from '../utils/announcementFormat'
 
 const DAY_HEADER_RE = /^(Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|Monday):$/
 

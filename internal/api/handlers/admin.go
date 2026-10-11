@@ -234,6 +234,29 @@ func (h *AdminHandler) UpdateGame(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, game)
 }
 
+// GET /api/v1/admin/announcement-recipients?week=1&season=2025
+// Lets the compose UI offer a "copy recipients" button for Jack to paste into
+// a manually-sent Gmail draft, since auto-send is off until Resend has a
+// verified domain.
+func (h *AdminHandler) AnnouncementRecipients(w http.ResponseWriter, r *http.Request) {
+	week, ok := weekFromRequest(w, r, h.pool)
+	if !ok {
+		return
+	}
+
+	users, err := queries.GetUsersForNotification(r.Context(), h.pool, week.ID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	emails := make([]string, 0, len(users))
+	for _, u := range users {
+		emails = append(emails, u.Email)
+	}
+	respondJSON(w, http.StatusOK, map[string]any{"emails": emails})
+}
+
 func (h *AdminHandler) sendNotifications(a *models.Announcement, weekID int) {
 	ctx := context.Background()
 	week, err := queries.GetWeekByID(ctx, h.pool, weekID)

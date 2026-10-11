@@ -116,9 +116,17 @@ export default function Picks() {
 
   // Submitted confirmation screen
   if (submitted && !editing) {
+    const now = Date.now()
     const pickedCount = Object.keys(draft).length
-    const complete = pickedCount === games.length
-    const remaining = games.length - pickedCount
+    // Only games that haven't kicked off yet are actually actionable — a
+    // missed game that already locked can't be picked anymore, so it
+    // shouldn't be presented as something the user still needs to do.
+    const openGames = games.filter((g) => now <= new Date(g.kickoff_at).getTime())
+    const lockedGames = games.filter((g) => now > new Date(g.kickoff_at).getTime())
+    const openMissing = openGames.filter((g) => !draft[g.id]).length
+    const lockedMissed = lockedGames.filter((g) => !draft[g.id]).length
+    const complete = openMissing === 0
+
     return (
       <div className="max-w-lg mx-auto px-4 py-6 space-y-6">
         <div className="flex flex-col items-center text-center space-y-6 py-10">
@@ -144,9 +152,15 @@ export default function Picks() {
             <p className="text-gray-500">
               Week {week?.week_number} — {pickedCount} of {games.length} games picked
             </p>
-            {!complete && (
+            {openMissing > 0 && (
               <p className="text-sm text-amber-600">
-                {remaining} game{remaining === 1 ? '' : 's'} still {remaining === 1 ? 'needs' : 'need'} a pick.
+                {openMissing} game{openMissing === 1 ? '' : 's'} still {openMissing === 1 ? 'needs' : 'need'} a pick.
+              </p>
+            )}
+            {lockedMissed > 0 && (
+              <p className="text-sm text-gray-400">
+                {lockedMissed} game{lockedMissed === 1 ? '' : 's'} already kicked off before {lockedMissed === 1 ? 'it was' : 'they were'} picked —
+                that{lockedMissed === 1 ? "'s" : "'ll each be"} automatically credited based on the lowest score anyone else got that window, so it won't hurt your total.
               </p>
             )}
           </div>
