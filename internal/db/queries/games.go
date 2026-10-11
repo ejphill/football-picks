@@ -136,6 +136,9 @@ func SetGameIncluded(ctx context.Context, pool *pgxpool.Pool, gameID uuid.UUID, 
 }
 
 // ScorePicks re-scores all picks for final games — idempotent, safe to re-run.
+// Skips games an admin has excluded from picks, so an excluded game's picks
+// never get scored in the first place, rather than relying on every reader
+// downstream to filter them back out.
 func ScorePicks(ctx context.Context, pool *pgxpool.Pool) error {
 	_, err := pool.Exec(ctx, `
 		UPDATE picks
@@ -145,6 +148,7 @@ func ScorePicks(ctx context.Context, pool *pgxpool.Pool) error {
 		WHERE picks.game_id = games.id
 		  AND games.status = 'final'
 		  AND games.winner IS NOT NULL
+		  AND games.included_in_picks = TRUE
 		  AND (picks.is_correct IS NULL OR picks.updated_at < games.updated_at)
 	`)
 	if err != nil {

@@ -222,3 +222,35 @@ func TestScorePicks_UpdatesIsCorrect(t *testing.T) {
 		t.Error("pick should be marked correct")
 	}
 }
+
+// TestScorePicks_SkipsExcludedGames verifies that a pick on a game an admin
+// has excluded from picks never gets scored at all — ScorePicks shouldn't
+// rely on every downstream reader to filter it back out.
+func TestScorePicks_SkipsExcludedGames(t *testing.T) {
+	pool := testutil.NewTestDB(t)
+	testutil.ResetDB(t, pool)
+
+	season := testutil.SeedSeason(t, pool, 2025, true)
+	week := testutil.SeedWeek(t, pool, season.ID, 1, time.Now().Add(-time.Hour))
+	u := testutil.SeedUser(t, pool, "uid-sp-2", "ExcludedUser", "excludeduser@test.com")
+	winner := "home"
+	game := testutil.SeedGame(t, pool, week.ID, "espn-sp-2", "KC", "DET", "final", &winner)
+	testutil.SeedPick(t, pool, u.ID, game.ID, "home")
+
+	if _, err := pool.Exec(context.Background(),
+		`UPDATE games SET included_in_picks = FALSE WHERE id = $1`, game.ID); err != nil {
+		t.Fatalf("exclude game: %v", err)
+	}
+
+	if err := queries.ScorePicks(context.Background(), pool); err != nil {
+		t.Fatalf("ScorePicks: %v", err)
+	}
+
+	var isCorrect *bool
+	pool.QueryRow(context.Background(),
+		`SELECT is_correct FROM picks WHERE user_id=$1 AND game_id=$2`,
+		u.ID, game.ID).Scan(&isCorrect)
+	if isCorrect != nil {
+		t.Errorf("pick on an excluded game should not be scored, got is_correct=%v", *isCorrect)
+	}
+}
