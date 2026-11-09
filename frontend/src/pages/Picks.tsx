@@ -71,6 +71,22 @@ export default function Picks() {
     setDraft((prev) => ({ ...prev, [gameId]: team }))
   }
 
+  // Fills every still-open game with whichever side the spread favors —
+  // games that already locked are left untouched (can't be changed), and
+  // pick'em games with no clear favorite (spread 0 or missing) are skipped.
+  const handlePickFavorites = () => {
+    setDraft((prev) => {
+      const next = { ...prev }
+      for (const game of games) {
+        const locked = Date.now() > new Date(game.kickoff_at).getTime()
+        if (locked) continue
+        if (game.spread == null || game.spread === 0) continue
+        next[game.id] = game.spread < 0 ? 'home' : 'away'
+      }
+      return next
+    })
+  }
+
   const handleSubmit = async () => {
     // Only resend picks that actually changed — otherwise re-submitting mid-
     // week re-sends every already-saved pick too, including ones for games
@@ -185,6 +201,13 @@ export default function Picks() {
         <h2 className="text-xl font-bold text-gray-900">Week {week?.week_number} Picks</h2>
         <span className="text-sm text-gray-500">{pickedCount}/{games.length} picked</span>
       </div>
+      <button
+        onClick={handlePickFavorites}
+        className="text-sm font-medium px-3 py-1.5 rounded-lg border border-gray-300 text-gray-700
+                   hover:bg-gray-50 transition-colors"
+      >
+        Pick All Favorites
+      </button>
       {submitError && (
         <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">
           {submitError}
