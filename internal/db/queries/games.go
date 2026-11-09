@@ -10,6 +10,7 @@ import (
 )
 
 const gameColumns = `id, week_id, espn_game_id, home_team, away_team, home_team_name, away_team_name,
+	       home_team_record, away_team_record,
 	       spread, kickoff_at, home_score, away_score, winner, period, display_clock, status,
 	       included_in_picks, created_at, updated_at`
 
@@ -20,7 +21,7 @@ type rowScanner interface {
 func scanGame(row rowScanner, g *models.Game) error {
 	return row.Scan(
 		&g.ID, &g.WeekID, &g.ESPNGameID, &g.HomeTeam, &g.AwayTeam,
-		&g.HomeTeamName, &g.AwayTeamName, &g.Spread, &g.KickoffAt,
+		&g.HomeTeamName, &g.AwayTeamName, &g.HomeTeamRecord, &g.AwayTeamRecord, &g.Spread, &g.KickoffAt,
 		&g.HomeScore, &g.AwayScore, &g.Winner, &g.Period, &g.DisplayClock, &g.Status,
 		&g.IncludedInPicks, &g.CreatedAt, &g.UpdatedAt,
 	)
@@ -93,26 +94,30 @@ func UpsertGame(ctx context.Context, pool *pgxpool.Pool, g *models.Game) (*model
 	result := &models.Game{}
 	err := scanGame(pool.QueryRow(ctx, `
 		INSERT INTO games (week_id, espn_game_id, home_team, away_team, home_team_name, away_team_name,
+		                   home_team_record, away_team_record,
 		                   spread, kickoff_at, home_score, away_score, winner, period, display_clock,
 		                   status, included_in_picks)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
-		        EXTRACT(DOW FROM $8 AT TIME ZONE 'America/New_York') NOT IN (2, 3, 4, 5))
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
+		        EXTRACT(DOW FROM $10 AT TIME ZONE 'America/New_York') NOT IN (2, 3, 4, 5))
 		ON CONFLICT (espn_game_id) DO UPDATE SET
-		    home_team      = EXCLUDED.home_team,
-		    away_team      = EXCLUDED.away_team,
-		    home_team_name = EXCLUDED.home_team_name,
-		    away_team_name = EXCLUDED.away_team_name,
-		    spread         = EXCLUDED.spread,
-		    kickoff_at     = EXCLUDED.kickoff_at,
-		    home_score     = EXCLUDED.home_score,
-		    away_score     = EXCLUDED.away_score,
-		    winner         = EXCLUDED.winner,
-		    period         = EXCLUDED.period,
-		    display_clock  = EXCLUDED.display_clock,
-		    status         = EXCLUDED.status,
-		    updated_at     = NOW()
+		    home_team        = EXCLUDED.home_team,
+		    away_team        = EXCLUDED.away_team,
+		    home_team_name   = EXCLUDED.home_team_name,
+		    away_team_name   = EXCLUDED.away_team_name,
+		    home_team_record = COALESCE(EXCLUDED.home_team_record, games.home_team_record),
+		    away_team_record = COALESCE(EXCLUDED.away_team_record, games.away_team_record),
+		    spread           = COALESCE(EXCLUDED.spread, games.spread),
+		    kickoff_at       = EXCLUDED.kickoff_at,
+		    home_score       = EXCLUDED.home_score,
+		    away_score       = EXCLUDED.away_score,
+		    winner           = EXCLUDED.winner,
+		    period           = EXCLUDED.period,
+		    display_clock    = EXCLUDED.display_clock,
+		    status           = EXCLUDED.status,
+		    updated_at       = NOW()
 		RETURNING `+gameColumns,
 		g.WeekID, g.ESPNGameID, g.HomeTeam, g.AwayTeam, g.HomeTeamName, g.AwayTeamName,
+		g.HomeTeamRecord, g.AwayTeamRecord,
 		g.Spread, g.KickoffAt, g.HomeScore, g.AwayScore, g.Winner, g.Period, g.DisplayClock, g.Status,
 	), result)
 	if err != nil {

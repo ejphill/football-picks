@@ -53,20 +53,28 @@ type Event struct {
 }
 
 type Competition struct {
-	Competitors []Competitor  `json:"competitors"`
-	Odds        []Odds        `json:"odds"`
-	Status      EventStatus   `json:"status"`
+	Competitors []Competitor `json:"competitors"`
+	Odds        []Odds       `json:"odds"`
+	Status      EventStatus  `json:"status"`
 }
 
 type Competitor struct {
-	HomeAway string `json:"homeAway"` // "home" or "away"
-	Team     Team   `json:"team"`
-	Score    string `json:"score"`
+	HomeAway string   `json:"homeAway"` // "home" or "away"
+	Team     Team     `json:"team"`
+	Score    string   `json:"score"`
+	Records  []Record `json:"records"`
 }
 
 type Team struct {
 	Abbreviation string `json:"abbreviation"`
 	DisplayName  string `json:"displayName"`
+}
+
+// Record is a team's W-L(-T) record as of this event. ESPN includes several
+// splits (overall, home, road) — we only care about "total" (overall).
+type Record struct {
+	Type    string `json:"type"`
+	Summary string `json:"summary"`
 }
 
 type Odds struct {

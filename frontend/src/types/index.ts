@@ -31,6 +31,8 @@ export interface Game {
   away_team: string
   home_team_name: string
   away_team_name: string
+  home_team_record: string | null
+  away_team_record: string | null
   spread: number | null
   kickoff_at: string
   home_score: number | null

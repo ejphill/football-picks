@@ -89,15 +89,18 @@ func parseEvent(event Event, weekID int) (*models.Game, error) {
 	g.KickoffAt = t
 
 	for _, c := range comp.Competitors {
+		record := overallRecord(c.Records)
 		if c.HomeAway == "home" {
 			g.HomeTeam = c.Team.Abbreviation
 			g.HomeTeamName = c.Team.DisplayName
+			g.HomeTeamRecord = record
 			if score, err := strconv.Atoi(c.Score); err == nil {
 				g.HomeScore = &score
 			}
 		} else {
 			g.AwayTeam = c.Team.Abbreviation
 			g.AwayTeamName = c.Team.DisplayName
+			g.AwayTeamRecord = record
 			if score, err := strconv.Atoi(c.Score); err == nil {
 				g.AwayScore = &score
 			}
@@ -125,6 +128,18 @@ func parseEvent(event Event, weekID int) (*models.Game, error) {
 	}
 
 	return g, nil
+}
+
+// overallRecord returns a team's overall W-L(-T) record summary (e.g. "6-2"),
+// or nil if ESPN didn't include one for this event.
+func overallRecord(records []Record) *string {
+	for _, r := range records {
+		if r.Type == "total" {
+			summary := r.Summary
+			return &summary
+		}
+	}
+	return nil
 }
 
 func mapStatus(espnStatus string) string {

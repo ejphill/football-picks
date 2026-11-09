@@ -33,6 +33,7 @@ export default function GameCard({ game, selected, locked: isLocked, onSelect }:
   const teamButton = (side: 'home' | 'away') => {
     const name = side === 'home' ? game.home_team_name : game.away_team_name
     const abbr = side === 'home' ? game.home_team : game.away_team
+    const record = side === 'home' ? game.home_team_record : game.away_team_record
     const score = side === 'home' ? game.home_score : game.away_score
     const isPicked = selected === side
     const showScore = isLocked && score != null
@@ -65,6 +66,7 @@ export default function GameCard({ game, selected, locked: isLocked, onSelect }:
           {showScore && <span className="text-lg font-bold text-gray-800">{score}</span>}
         </span>
         <span className="text-xs text-gray-500 mt-0.5 truncate max-w-full">{name}</span>
+        {record && <span className="text-[10px] text-gray-400 mt-0.5">({record})</span>}
       </button>
     )
   }

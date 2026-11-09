@@ -35,20 +35,22 @@ type Week struct {
 }
 
 type Game struct {
-	ID           uuid.UUID `json:"id"`
-	WeekID       int       `json:"week_id"`
-	ESPNGameID   string    `json:"espn_game_id"`
-	HomeTeam     string    `json:"home_team"`
-	AwayTeam     string    `json:"away_team"`
-	HomeTeamName string    `json:"home_team_name"`
-	AwayTeamName string    `json:"away_team_name"`
-	Spread       *float64  `json:"spread,omitempty"`
-	KickoffAt    time.Time `json:"kickoff_at"`
-	HomeScore    *int      `json:"home_score,omitempty"`
-	AwayScore    *int      `json:"away_score,omitempty"`
-	Winner       *string   `json:"winner,omitempty"`
-	Period       *int      `json:"period,omitempty"`
-	DisplayClock *string   `json:"display_clock,omitempty"`
+	ID              uuid.UUID `json:"id"`
+	WeekID          int       `json:"week_id"`
+	ESPNGameID      string    `json:"espn_game_id"`
+	HomeTeam        string    `json:"home_team"`
+	AwayTeam        string    `json:"away_team"`
+	HomeTeamName    string    `json:"home_team_name"`
+	AwayTeamName    string    `json:"away_team_name"`
+	HomeTeamRecord  *string   `json:"home_team_record,omitempty"`
+	AwayTeamRecord  *string   `json:"away_team_record,omitempty"`
+	Spread          *float64  `json:"spread,omitempty"`
+	KickoffAt       time.Time `json:"kickoff_at"`
+	HomeScore       *int      `json:"home_score,omitempty"`
+	AwayScore       *int      `json:"away_score,omitempty"`
+	Winner          *string   `json:"winner,omitempty"`
+	Period          *int      `json:"period,omitempty"`
+	DisplayClock    *string   `json:"display_clock,omitempty"`
 	Status          string    `json:"status"`
 	IncludedInPicks bool      `json:"included_in_picks"`
 	CreatedAt       time.Time `json:"created_at"`
@@ -66,13 +68,13 @@ type Pick struct {
 }
 
 type Announcement struct {
-	ID          uuid.UUID  `json:"id"`
-	AuthorID    uuid.UUID  `json:"author_id"`
-	WeekID      int        `json:"week_id"`
-	Intro       string     `json:"intro"`
-	BodyJSON    *string    `json:"body_json,omitempty"`
-	PublishedAt time.Time  `json:"published_at"`
-	CreatedAt   time.Time  `json:"created_at"`
+	ID          uuid.UUID `json:"id"`
+	AuthorID    uuid.UUID `json:"author_id"`
+	WeekID      int       `json:"week_id"`
+	Intro       string    `json:"intro"`
+	BodyJSON    *string   `json:"body_json,omitempty"`
+	PublishedAt time.Time `json:"published_at"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 type NotificationLog struct {
