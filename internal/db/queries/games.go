@@ -2,10 +2,12 @@ package queries
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/evan/football-picks/internal/models"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -115,15 +117,43 @@ func UpsertGame(ctx context.Context, pool *pgxpool.Pool, g *models.Game) (*model
 		    display_clock    = EXCLUDED.display_clock,
 		    status           = EXCLUDED.status,
 		    updated_at       = NOW()
+		WHERE (games.home_team, games.away_team, games.home_team_name, games.away_team_name,
+		       games.home_team_record, games.away_team_record, games.spread, games.kickoff_at,
+		       games.home_score, games.away_score, games.winner, games.period, games.display_clock, games.status)
+		      IS DISTINCT FROM
+		      (EXCLUDED.home_team, EXCLUDED.away_team, EXCLUDED.home_team_name, EXCLUDED.away_team_name,
+		       COALESCE(EXCLUDED.home_team_record, games.home_team_record), COALESCE(EXCLUDED.away_team_record, games.away_team_record),
+		       COALESCE(EXCLUDED.spread, games.spread), EXCLUDED.kickoff_at,
+		       EXCLUDED.home_score, EXCLUDED.away_score, EXCLUDED.winner, EXCLUDED.period, EXCLUDED.display_clock, EXCLUDED.status)
 		RETURNING `+gameColumns,
 		g.WeekID, g.ESPNGameID, g.HomeTeam, g.AwayTeam, g.HomeTeamName, g.AwayTeamName,
 		g.HomeTeamRecord, g.AwayTeamRecord,
 		g.Spread, g.KickoffAt, g.HomeScore, g.AwayScore, g.Winner, g.Period, g.DisplayClock, g.Status,
 	), result)
 	if err != nil {
+		// The WHERE clause above makes the DO UPDATE a no-op (and RETURNING
+		// yield nothing) when ESPN sent back identical data — the common case
+		// while polling a game that hasn't changed since the last sync. That's
+		// not a failure, just nothing to report; fetch the existing row instead
+		// of rewriting it and repaying a disk write for no reason.
+		if errors.Is(err, pgx.ErrNoRows) {
+			return GetGameByESPNID(ctx, pool, g.ESPNGameID)
+		}
 		return nil, fmt.Errorf("upsert game: %w", err)
 	}
 	return result, nil
+}
+
+func GetGameByESPNID(ctx context.Context, pool *pgxpool.Pool, espnGameID string) (*models.Game, error) {
+	g := &models.Game{}
+	err := scanGame(pool.QueryRow(ctx, `
+		SELECT `+gameColumns+`
+		FROM games WHERE espn_game_id = $1
+	`, espnGameID), g)
+	if err != nil {
+		return nil, fmt.Errorf("get game by espn id: %w", err)
+	}
+	return g, nil
 }
 
 func SetGameIncluded(ctx context.Context, pool *pgxpool.Pool, gameID uuid.UUID, included bool) (*models.Game, error) {
